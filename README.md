@@ -1,2 +1,28 @@
-# harmony-algo-community
-Harmony Algo Community indicators for TradingView (Pine Script) and MetaTrader 5 (MQL5): trend analysis, reversal tools and chart overlays. Source code, installation guides and documented limitations.
+# Harmony Algo Community Indicators
+
+Open-source chart tools for **TradingView (Pine Script)** and **MetaTrader 5 (MQL5)**. Each tool addresses a specific chart-analysis question, with documented calculations, settings and limitations.
+
+## Indicator library
+
+The repository is being set up. No indicator packages have been uploaded yet. Future packages will be listed here after their original TradingView publication has been reviewed and approved.
+
+## What each package contains
+
+- TradingView Community source in `.pine` and matching UTF-8 `.txt` format.
+- An MQL5 Community source port when technically suitable. An `.ex5` binary is included only when compilation has been verified.
+- A practical installation guide, input settings, signal timing, limitations, platform differences and separate test status.
+- Real chart examples, labelled with the platform and context in which they were captured.
+
+## Platforms and signals
+
+Community tools may cover trend analysis, reversal context and chart overlays. Each indicator describes its own purpose; a trend tool is not automatically a reversal signal. Broker feeds, sessions, history and platform behavior can produce different readings. Cross-platform signal equality is not assumed. Uncompiled or untested sources are clearly identified.
+
+These tools do not guarantee trading performance and are not complete execution strategies. Read each package guide before use.
+
+## Harmony Algo
+
+[Explore Harmony Algo](https://harmonyalgo.com). The existing premium product is for TradingView. This repository does not promise a premium MT5 product. Community branding is visible but editable in the source; it is not copy protection.
+
+## Licensing
+
+Follow the license and copyright notices included with each package. No premium or private product source is included in this repository.
