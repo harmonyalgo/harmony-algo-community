@@ -1,0 +1,11 @@
+Breakout Acceptance Map Community — validation record
+TradingView public script F4wMKWbW, published2026-11-15T12:18:32Z.
+https://www.tradingview.com/script/F4wMKWbW-Breakout-Acceptance-Map-Harmony-Algo/
+Approved clean SHA256719eadda0c905f5ad077a5470e3925630f4e225fb3c663efc5d60a9f0ee3dfd5;public DOM source readback matches12541characters.
+Community Pine/TXT SHA256c6141695ba2380404bdaf48a6b9306ec1a218f64c0b0d5ef57d8bdb6673584da.
+Community saved separately;sourcehash matches local;zero editor diagnostics;chartready;400rows x22columns match clean,zero differences including actualalertbooleans.
+Final actualTradingViewCommunitychart BTCUSDT4h visually inspected after timeframe recalculation;centerbranding andpanelheader visible,separate,readable.
+MT5 branded source SHA256019af90ce67d7f421a68b0dd1e550b01af2b88acec428dbde50b95a4981cf117.
+MT5 staticchecks only:12boundbuffers,11plots,closed-bar gate,defaultbounds,balanced syntax delimiters and separate branding. Not an MQL5 compiler check.
+MetaEditor/MT5 not available in inspected /Applications or priorlocalenvironment;no.ex5,charttest,livepopupdelivery or crossplatformnumericalequivalence claimed.
+No performancebacktest or profitguarantee. Brokerfeed/history/sessiondifferences apply.

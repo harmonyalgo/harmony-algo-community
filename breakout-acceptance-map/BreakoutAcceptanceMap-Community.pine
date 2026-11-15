@@ -1,0 +1,224 @@
+//@version=6
+// Breakout Acceptance Map Community — Harmony Algo | harmonyalgo.com
+// Copyright (c) 2026 Harmony Algo. Mozilla Public License 2.0.
+indicator("Breakout Acceptance Map Community [Harmony Algo]", shorttitle="BAM", overlay=true, max_bars_back=600, max_boxes_count=200, max_labels_count=500)
+
+string rg = "Range formation"
+int length = input.int(64, "Reference bars", minval=16, maxval=240, group=rg)
+int atrLength = input.int(21, "ATR length", minval=5, maxval=100, group=rg)
+float maxWidth = input.float(8.0, "Maximum range width / ATR", minval=2, maxval=15, step=0.5, group=rg)
+float maxEfficiency = input.float(0.35, "Maximum directional efficiency", minval=0.05, maxval=0.8, step=0.05, group=rg, tooltip="Absolute net close change divided by total absolute close changes. Lower values favor less directional ranges.")
+int armLife = input.int(96, "Armed range lifetime", minval=8, maxval=300, group=rg)
+string eg = "Breakout lifecycle"
+float breakoutBuffer = input.float(0.30, "Breakout buffer / ATR", minval=0.05, maxval=1, step=0.05, group=eg)
+int holdBars = input.int(3, "Outside closes for acceptance", minval=2, maxval=6, group=eg)
+int decisionBars = input.int(12, "Acceptance window", minval=6, maxval=40, group=eg)
+float retestBand = input.float(0.25, "Retest half-width / ATR", minval=0.15, maxval=0.75, step=0.05, group=eg)
+float excursion = input.float(1.25, "Travel before retest / ATR", minval=0.5, maxval=3, step=0.25, group=eg)
+int eventLife = input.int(128, "Total breakout tracking bars", minval=40, maxval=240, group=eg)
+int cooldown = input.int(12, "Full bars between ranges", minval=0, maxval=50, group=eg)
+string vg = "Display"
+int retained = input.int(12, "Ranges retained", minval=1, maxval=80, group=vg, tooltip="Signal labels are independent of range retention; up to 500 recent labels are retained.")
+bool showStages = input.bool(true, "Show breakout and retest markers", group=vg)
+bool showPanel = input.bool(true, "Show current state panel", group=vg)
+color bull = input.color(#018208, "Bullish acceptance", group=vg)
+color bear = input.color(#D12208, "Bearish acceptance", group=vg)
+color neutral = #8290A6
+color pending = #DAAC4C
+color failed = #E67D36
+
+float upper = ta.highest(high[1], length)
+float lower = ta.lowest(low[1], length)
+float priorAtr = ta.atr(atrLength)[1]
+float path = math.sum(math.abs(ta.change(close))[1], length)
+float efficiency = path > 0 ? math.abs(close[1] - close[length + 1]) / path : 1.0
+bool ready = bar_index > math.max(length + 1, atrLength + 1) and not na(priorAtr) and priorAtr > 0 and upper > lower
+bool compact = ready and upper - lower >= 2.5 * priorAtr and upper - lower <= maxWidth * priorAtr and efficiency <= maxEfficiency
+
+// Harmony Algo | harmonyalgo.com — approved lifecycle calculations unchanged.
+// 0 search, 1 armed, 2 pending, 3 accepted, 4 retest, 5 held.
+var int state = 0
+var int side = 0
+var int armedAt = na
+var int started = na
+var int acceptedAt = na
+var int touchedAt = na
+var int lastEnd = na
+var int held = 0
+var int inside = 0
+var float hi = na
+var float lo = na
+var float unit = na
+var float edge = na
+var float peak = na
+var float reclaim = na
+var string lastPhase = "No completed range"
+var box rangeBox = na
+var box edgeBox = na
+var array<box> ranges = array.new<box>()
+var array<box> edges = array.new<box>()
+bool broke = false
+bool accepted = false
+bool tested = false
+bool continued = false
+bool failure = false
+bool expired = false
+int eventSide = side
+
+if barstate.isconfirmed and ready
+    // Branch on the incoming state: no range can arm and break on one bar.
+    if state == 0
+        if compact and close >= lower and close <= upper and (na(lastEnd) or bar_index - lastEnd > cooldown)
+            hi := upper
+            lo := lower
+            unit := priorAtr
+            armedAt := bar_index
+            side := 0
+            edge := na
+            held := 0
+            inside := 0
+            state := 1
+            rangeBox := box.new(bar_index, hi, bar_index, lo, border_color=color.new(neutral, 45), bgcolor=color.new(neutral, 94))
+            array.push(ranges, rangeBox)
+            if array.size(ranges) > retained
+                box.delete(array.shift(ranges))
+    else if state == 1
+        box.set_right(rangeBox, bar_index)
+        bool up = close > hi + breakoutBuffer * unit
+        bool down = close < lo - breakoutBuffer * unit
+        if up or down
+            side := up ? 1 : -1
+            eventSide := side
+            edge := up ? hi : lo
+            started := bar_index
+            peak := up ? high : low
+            held := side * (close - edge) > 0.10 * unit ? 1 : 0
+            inside := 0
+            state := 2
+            broke := true
+            edgeBox := box.new(bar_index, edge + retestBand * unit, bar_index, edge - retestBand * unit, border_color=color.new(pending, 45), bgcolor=color.new(pending, 86))
+            array.push(edges, edgeBox)
+            if array.size(edges) > retained
+                box.delete(array.shift(edges))
+        else if bar_index - armedAt >= armLife
+            state := 0
+            lastEnd := bar_index
+            lastPhase := "Range expired"
+    else
+        box.set_right(edgeBox, bar_index)
+        eventSide := side
+        int age = bar_index - started + 1
+        float distance = side * (close - edge) / unit
+        bool backInside = distance < -0.15
+        inside := backInside ? inside + 1 : 0
+        bool oppositeBroken = side == 1 ? close < lo : close > hi
+        if inside >= 2 or oppositeBroken
+            failure := true
+            lastPhase := state == 2 ? "Breakout failed" : "Acceptance failed"
+        else if state == 2
+            held := distance > 0.10 ? held + 1 : 0
+            if held >= holdBars
+                accepted := true
+                state := 3
+                acceptedAt := bar_index
+                lastPhase := "Accepted"
+            else if age >= decisionBars
+                expired := true
+                lastPhase := "Acceptance timed out"
+        else if state == 3
+            // Use PREVIOUS confirmed peak, not intrabar high/low ordering.
+            bool travelled = side * (peak - edge) >= excursion * unit
+            bool intersects = low <= edge + retestBand * unit and high >= edge - retestBand * unit
+            if bar_index > acceptedAt and travelled and intersects
+                tested := true
+                state := 4
+                touchedAt := bar_index
+                reclaim := side == 1 ? high : low
+                lastPhase := "Retest in progress"
+        else if state == 4
+            if bar_index > touchedAt and side * (close - reclaim) > 0.05 * unit and distance > 0.10
+                continued := true
+                state := 5
+                lastPhase := "Retest held"
+        // Deadline takes priority over a retest/held event on its last bar.
+        if not failure and age >= eventLife
+            expired := true
+            accepted := false
+            tested := false
+            continued := false
+            lastPhase := "Tracking ended"
+        peak := side == 1 ? math.max(peak, high) : math.min(peak, low)
+        color phaseColor = failure ? failed : expired ? neutral : state == 2 or state == 4 ? pending : side == 1 ? bull : bear
+        box.set_bgcolor(edgeBox, color.new(phaseColor, 86))
+        box.set_border_color(edgeBox, color.new(phaseColor, 35))
+        if failure or expired
+            state := 0
+            lastEnd := bar_index
+            held := 0
+            inside := 0
+
+// Harmony Algo | harmonyalgo.com — original knowledge-bar timing retained.
+// Labels print at the knowledge bar and never move or change retrospectively.
+float spacing = math.max(nz(unit, priorAtr), syminfo.mintick) * 1.2
+var int lastLabelAt = na
+var float lastLabelY = na
+var bool lastLabelBelow = false
+bool mark = accepted or continued or failure
+if mark
+    string caption = failure ? "Failed" : continued ? "Held" : "Accepted"
+    color ink = failure ? failed : eventSide == 1 ? bull : bear
+    bool below = failure ? eventSide == -1 : eventSide == 1
+    float y = below ? low - spacing : high + spacing
+    if not na(lastLabelAt) and bar_index - lastLabelAt <= 6 and below == lastLabelBelow
+        y := below ? math.min(y, lastLabelY - spacing) : math.max(y, lastLabelY + spacing)
+    label.new(bar_index, y, caption, style=below ? label.style_label_up : label.style_label_down, color=ink, textcolor=color.white, size=size.small)
+    lastLabelAt := bar_index
+    lastLabelY := y
+    lastLabelBelow := below
+plotshape(showStages and broke and eventSide == 1, "Upward breakout", shape.diamond, location.belowbar, pending, text="B", textcolor=pending, size=size.tiny)
+plotshape(showStages and broke and eventSide == -1, "Downward breakout", shape.diamond, location.abovebar, pending, text="B", textcolor=pending, size=size.tiny)
+plotshape(showStages and tested and eventSide == 1, "Upward retest", shape.circle, location.belowbar, pending, text="R", textcolor=pending, size=size.tiny)
+plotshape(showStages and tested and eventSide == -1, "Downward retest", shape.circle, location.abovebar, pending, text="R", textcolor=pending, size=size.tiny)
+
+plot(priorAtr, "Prior ATR audit", display=display.data_window)
+plot(efficiency, "Range efficiency audit", display=display.data_window)
+plot(state, "State: 0 search 1 range 2 break 3 accept 4 test 5 held", display=display.data_window)
+plot(state >= 2 ? side : 0, "Active direction", display=display.data_window)
+plot(state > 0 ? hi : na, "Frozen upper", display=display.data_window)
+plot(state > 0 ? lo : na, "Frozen lower", display=display.data_window)
+plot(state > 0 ? unit : na, "Frozen ATR", display=display.data_window)
+plot((broke ? 1 : 0) + (accepted ? 2 : 0) + (tested ? 4 : 0) + (continued ? 8 : 0) + (failure ? 16 : 0) + (expired ? 32 : 0), "Event mask", display=display.data_window)
+plot(eventSide, "Event direction", display=display.data_window)
+
+var table panel = table.new(position.top_right, 2, 6, bgcolor=color.new(#111923, 8), border_width=1, border_color=color.new(neutral, 70))
+if barstate.isfirst
+    table.merge_cells(panel, 0, 0, 1, 0)
+if barstate.islast and showPanel
+    table.cell(panel, 0, 0, "Harmony Algo | harmonyalgo.com", text_color=color.white, text_size=size.small)
+    string phase = not ready ? "Warming up" : state == 0 ? "Searching" : state == 1 ? "Range armed" : state == 2 ? "Awaiting acceptance" : state == 3 ? "Accepted / watching" : state == 4 ? "Retest in progress" : "Retest held / watching"
+    color ink = state == 2 or state == 4 ? pending : state >= 3 ? (side == 1 ? bull : bear) : neutral
+    table.cell(panel, 0, 1, "BREAKOUT MAP", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 1, "Closed-bar stages", text_color=neutral, text_size=size.small)
+    table.cell(panel, 0, 2, state >= 2 ? (side == 1 ? "UP" : "DOWN") : "RANGE", text_color=ink, text_size=size.small)
+    table.cell(panel, 1, 2, phase, text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 3, "Frozen edge", text_color=neutral, text_size=size.small)
+    table.cell(panel, 1, 3, state >= 2 ? str.tostring(edge, format.mintick) : "—", text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 4, state == 2 ? "Outside closes" : "Tracking age", text_color=neutral, text_size=size.small)
+    table.cell(panel, 1, 4, state == 2 ? str.tostring(held) + " / " + str.tostring(holdBars) : state >= 3 ? str.tostring(bar_index - started + 1) + " / " + str.tostring(eventLife) : "—", text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 5, "Last phase", text_color=neutral, text_size=size.small)
+    table.cell(panel, 1, 5, lastPhase, text_color=color.white, text_size=size.small)
+
+alertcondition(broke, "Breakout detected", "Range breakout detected on {{ticker}} {{interval}} at {{close}}. Acceptance pending. Confirmed close.")
+alertcondition(accepted and eventSide == 1, "Bullish acceptance", "Bullish breakout accepted on {{ticker}} {{interval}} at {{close}}. Confirmed close.")
+alertcondition(accepted and eventSide == -1, "Bearish acceptance", "Bearish breakout accepted on {{ticker}} {{interval}} at {{close}}. Confirmed close.")
+alertcondition(tested, "Retest started", "Accepted breakout is retesting its frozen edge on {{ticker}} {{interval}}. Confirmed close.")
+alertcondition(continued and eventSide == 1, "Bullish retest held", "Bullish retest held on {{ticker}} {{interval}} at {{close}}. Confirmed close.")
+alertcondition(continued and eventSide == -1, "Bearish retest held", "Bearish retest held on {{ticker}} {{interval}} at {{close}}. Confirmed close.")
+alertcondition(failure, "Breakout or acceptance failed", "Breakout/acceptance failed on {{ticker}} {{interval}} at {{close}}. Not an opposite-direction entry. Confirmed close.")
+alertcondition(expired, "Observation window ended", "Breakout observation window ended on {{ticker}} {{interval}}. No trade outcome implied.")
+
+// Permanent Community branding; independent of calculations and alerts.
+var table communityBrand = table.new(position.middle_center, 1, 2, bgcolor=color.new(color.black, 100))
+if barstate.islast
+    table.cell(communityBrand, 0, 0, "Harmony Algo | harmonyalgo.com", text_color=color.new(color.white, 35), text_size=size.normal)
+    table.cell(communityBrand, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color=color.new(color.white, 35), text_size=size.small)
