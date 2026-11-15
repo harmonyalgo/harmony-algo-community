@@ -4,7 +4,7 @@ Open-source chart tools for **TradingView (Pine Script)** and **MetaTrader 5 (MQ
 
 ## Indicator library
 
-The repository is being set up. No indicator packages have been uploaded yet. Future packages will be listed here after their original TradingView publication has been reviewed and approved.
+- [Breakout Acceptance Map](breakout-acceptance-map/): fixed-range breakout acceptance and retest lifecycle. TradingView Community Pine/TXT are compiled and checked; the MT5 source port is explicitly uncompiled and untested.
 
 ## What each package contains
 
