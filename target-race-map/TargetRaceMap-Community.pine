@@ -1,0 +1,470 @@
+//@version=6
+// Harmony Algo | harmonyalgo.com — Community distribution.
+// Same calculations, defaults, signals and alerts as the approved clean release.
+// Editable source: branding is presentation, not copy protection.
+indicator("Target Race Map Community [Harmony Algo]", shorttitle = "TargetRace", overlay = true, behind_chart = false, max_bars_back = 5000, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500)
+// fixed-barrier races and empirical residual-life cohorts.
+// Original implementation. Frequencies describe past races, not guaranteed odds.
+
+string G1 = "Race definition"
+int lookback = input.int(32, "Breakout lookback", minval = 10, maxval = 200, group = G1)
+int atrLength = input.int(14, "ATR length", minval = 5, maxval = 100, group = G1)
+float buffer = input.float(0.10, "Breakout buffer (prior ATR)", minval = 0, maxval = 2, step = 0.05, group = G1)
+float distance = input.float(2.5, "Each barrier (prior ATR)", minval = 0.5, maxval = 5, step = 0.25, group = G1)
+int horizon = input.int(48, "Deadline (subsequent bars)", minval = 8, maxval = 100, group = G1)
+int cooldown = input.int(8, "Complete cooldown bars", minval = 0, maxval = 50, group = G1)
+string G2 = "Historical evidence"
+int memory = input.int(400, "Resolved races in memory (both directions)", minval = 50, maxval = 600, group = G2)
+int minimum = input.int(20, "Minimum surviving examples", minval = 10, maxval = 100, group = G2)
+float tolerance = input.float(0.50, "Position matching tolerance (barrier distance)", minval = 0.15, maxval = 1.0, step = 0.05, group = G2)
+bool pathWeighting = input.bool(false, "Weight similar movement paths (experimental)", tooltip = "Optional velocity weighting. Development comparisons did not show a consistent gain over position-only matching; off by default.", group = G2)
+float velocityWidth = input.float(0.15, "Velocity weighting width (barrier/bar)", minval = 0.05, maxval = 0.5, step = 0.05, group = G2)
+string G3 = "Display"
+int retain = input.int(6, "Recent target maps on chart", minval = 1, maxval = 165, tooltip = "Target boxes and barrier lines only. Old arrows and result labels have their own independent history limit.", group = G3)
+int retainLabels = input.int(500, "Historical labels to keep", minval = 50, maxval = 500, tooltip = "Combined limit for setup arrows, Strong confirmations and observed-result labels. The oldest label is removed only when this limit is reached; deleting an old target map does not delete its signals.", group = G3)
+bool showPanel = input.bool(true, "Show evidence panel", group = G3)
+string panelCorner = input.string("Top right", "Panel corner", options = ["Top right", "Top left", "Bottom right", "Bottom left"], group = G3)
+bool showLabels = input.bool(true, "Show setup and result labels", group = G3)
+color UP = #018208
+color DN = #D12208
+color NEUTRAL = #7F49DE
+color INK = #FFFFFF
+color MUTED = #ABB3C2
+color PANEL = #151B26
+
+type PastRace
+    int side
+    int duration
+    int outcome
+    array<float> path
+
+var array<PastRace> history = array.new<PastRace>()
+var array<float> currentPath = array.new_float()
+var array<line> uppers = array.new_line()
+var array<line> lowers = array.new_line()
+var array<line> centers = array.new_line()
+var array<box> areas = array.new_box()
+var array<label> marks = array.new_label()
+var array<float> checkModel = array.new_float()
+var array<float> checkBase = array.new_float()
+var array<float> checkFav = array.new_float()
+var array<int> checkHit = array.new_int()
+
+// Causal path velocity in normalized barrier units per bar.
+f_velocity(array<float> path, int age) =>
+    int span = math.min(age, 3)
+    span > 0 ? (array.get(path, age) - array.get(path, age - span)) / span : 0.0
+
+// Harmony Algo | harmonyalgo.com — historical evidence engine, unchanged.
+// Position-matched paths are weighted by similarity of closing velocity.
+// Current unresolved race is excluded; all stored labels were known earlier.
+f_cohort(int side, int age, float location, float velocity) =>
+    int n = 0
+    int survivors = 0
+    float sw = 0
+    float sw2 = 0
+    float u = 0
+    float d = 0
+    float t = 0
+    float a = 0
+    float u1 = 0
+    float d1 = 0
+    float u2 = 0
+    float d2 = 0
+    float bu = 0
+    float bd = 0
+    float bt = 0
+    float ba = 0
+    float ow = 0
+    float ow2 = 0
+    float ou = 0
+    float od = 0
+    float nw = 0
+    float nw2 = 0
+    float nu = 0
+    float nd = 0
+    int k1 = int(math.ceil((horizon - age) / 3.0))
+    int k2 = int(math.ceil(2.0 * (horizon - age) / 3.0))
+    int total = array.size(history)
+    if total > 0
+        for i = 0 to total - 1
+            PastRace past = array.get(history, i)
+            if past.side == side and past.duration > age
+                survivors += 1
+                if math.abs(array.get(past.path, age) - location) <= tolerance
+                    n += 1
+                    float diff = (f_velocity(past.path, age) - velocity) / velocityWidth
+                    float w = pathWeighting ? 1.0 / (1.0 + diff * diff) : 1.0
+                    sw += w
+                    sw2 += w * w
+                    u += past.outcome == 1 ? w : 0
+                    d += past.outcome == -1 ? w : 0
+                    t += past.outcome == 2 ? w : 0
+                    a += past.outcome == 3 ? w : 0
+                    bu += past.outcome == 1 ? 1 : 0
+                    bd += past.outcome == -1 ? 1 : 0
+                    bt += past.outcome == 2 ? 1 : 0
+                    ba += past.outcome == 3 ? 1 : 0
+                    int remaining = past.duration - age
+                    u1 += past.outcome == 1 and remaining <= k1 ? w : 0
+                    d1 += past.outcome == -1 and remaining <= k1 ? w : 0
+                    u2 += past.outcome == 1 and remaining <= k2 ? w : 0
+                    d2 += past.outcome == -1 and remaining <= k2 ? w : 0
+                    if i < int(math.floor(total / 2.0))
+                        ow += w
+                        ow2 += w * w
+                        ou += past.outcome == 1 ? w : 0
+                        od += past.outcome == -1 ? w : 0
+                    else
+                        nw += w
+                        nw2 += w * w
+                        nu += past.outcome == 1 ? w : 0
+                        nd += past.outcome == -1 ? w : 0
+    float eff = sw2 > 0 ? sw * sw / sw2 : 0
+    float oldEff = ow2 > 0 ? ow * ow / ow2 : 0
+    float newEff = nw2 > 0 ? nw * nw / nw2 : 0
+    int stability = oldEff >= 10 and newEff >= 10 ? (math.max(math.abs(ou / ow - nu / nw), math.abs(od / ow - nd / nw)) <= 0.15 ? 1 : -1) : 0
+    float den = sw > 0 ? sw : 1
+    float baseDen = n > 0 ? n : 1
+    [n, eff, u / den, d / den, t / den, a / den, survivors, u1 / den, d1 / den, u2 / den, d2 / den, stability, bu / baseDen, bd / baseDen, bt / baseDen, ba / baseDen]
+
+f_rate(float rate, bool supported) => supported ? str.tostring(100.0 * rate, "0") + "%" : "—"
+
+f_mark(int x, float y, string word, string style, color c, string tip, string font) =>
+    if showLabels
+        // Signal history is independent of the target-map drawing queue.
+        // Delete BEFORE allocation so the platform never evicts an untracked label.
+        if array.size(marks) >= retainLabels
+            label.delete(array.shift(marks))
+        array.push(marks, label.new(x, y, word, style = style, color = c, textcolor = INK, size = font, tooltip = tip))
+
+float priorHigh = ta.highest(high, lookback)[1]
+float priorLow = ta.lowest(low, lookback)[1]
+float scale = ta.atr(atrLength)[1]
+bool valid = not na(open) and not na(high) and not na(low) and not na(close) and high >= math.max(open, close) and low <= math.min(open, close) and high >= low
+bool ready = valid and bar_index >= lookback and not na(scale) and scale > syminfo.mintick and not na(priorHigh) and not na(priorLow)
+bool upBreak = ready and close > priorHigh + buffer * scale
+bool downBreak = ready and close < priorLow - buffer * scale
+
+var bool active = false
+var int side = 0
+var int start = na
+var int lastEnd = na
+var int age = 0
+var int result = 0
+var int cancelled = 0
+var float origin = na
+var float upper = na
+var float lower = na
+var int startN = 0
+var int cohortN = 0
+var int survivorsN = 0
+var float location = 0
+var float countU = 0
+var float countD = 0
+var float countT = 0
+var float countA = 0
+var float effectiveN = 0
+var float velocity = 0
+var float soonU = 0
+var float soonD = 0
+var float laterU = 0
+var float laterD = 0
+var int stability = 0
+var float baseU = 0
+var float baseD = 0
+var float baseT = 0
+var float baseA = 0
+var int strongRun = 0
+var bool strongIssued = false
+var bool evaluationReady = false
+var array<float> prediction = array.new_float()
+var array<float> baseline = array.new_float()
+var int predictionSide = 0
+var float predictionFav = 0
+var line milestone1 = na
+var line milestone2 = na
+var int forecastAge = 0
+var line topLine = na
+var line bottomLine = na
+var line originLine = na
+var box raceBox = na
+bool newRace = false
+bool upperHit = false
+bool lowerHit = false
+bool timedOut = false
+bool ambiguous = false
+bool dataCancelled = false
+bool strongUp = false
+bool strongDown = false
+bool strongCandidate = false
+
+if barstate.isconfirmed
+    bool wasActive = active
+    if wasActive
+        age := bar_index - start
+        int observed = 0
+        if not valid
+            observed := 4
+        // Known opening gaps have an observable order, unlike intrabar ties.
+        else if open >= upper
+            observed := 1
+        else if open <= lower
+            observed := -1
+        else if high >= upper and low <= lower
+            observed := 3
+        else if high >= upper
+            observed := 1
+        else if low <= lower
+            observed := -1
+        else if age >= horizon
+            observed := 2
+        if observed != 0
+            active := false
+            line.delete(milestone1)
+            line.delete(milestone2)
+            result := observed
+            lastEnd := bar_index
+            upperHit := observed == 1
+            lowerHit := observed == -1
+            timedOut := observed == 2
+            ambiguous := observed == 3
+            dataCancelled := observed == 4
+            line.set_x2(topLine, bar_index)
+            line.set_x2(bottomLine, bar_index)
+            line.set_x2(originLine, bar_index)
+            box.set_right(raceBox, bar_index)
+            box.set_border_color(raceBox, color.new(observed == 1 ? UP : observed == -1 ? DN : NEUTRAL, 55))
+            if observed == 4
+                cancelled += 1
+            else
+                if evaluationReady
+                    float bm = 0
+                    float bb = 0
+                    for k = 0 to 3
+                        int endpoint = k == 0 ? 1 : k == 1 ? -1 : k == 2 ? 2 : 3
+                        float actual = observed == endpoint ? 1.0 : 0.0
+                        bm += math.pow(array.get(prediction, k) - actual, 2)
+                        bb += math.pow(array.get(baseline, k) - actual, 2)
+                    array.push(checkModel, bm)
+                    array.push(checkBase, bb)
+                    array.push(checkFav, predictionFav)
+                    array.push(checkHit, observed == predictionSide ? 1 : 0)
+                    if array.size(checkModel) > 100
+                        array.shift(checkModel)
+                        array.shift(checkBase)
+                        array.shift(checkFav)
+                        array.shift(checkHit)
+                array.push(history, PastRace.new(side, age, observed, array.copy(currentPath)))
+                if array.size(history) > memory
+                    array.shift(history)
+            // Evidence stays at the last PRE-OUTCOME close. No self-training.
+            string word = observed == 1 ? "UP first" : observed == -1 ? "DOWN first" : observed == 2 ? "No hit" : observed == 3 ? "Both · unknown" : "Data cancelled"
+            float y = observed == 1 ? upper : observed == -1 ? lower : origin
+            color c = observed == 1 ? UP : observed == -1 ? DN : NEUTRAL
+            f_mark(bar_index, y, word, label.style_label_left, c, "Observed race outcome, not an entry signal.", size.tiny)
+        else
+            location := (close - origin) / (upper - origin)
+            array.push(currentPath, location)
+            velocity := f_velocity(currentPath, age)
+            [n, eff, u, d, t, a, survivors, u1, d1, u2, d2, stable, bU, bD, bT, bA] = f_cohort(side, age, location, velocity)
+            survivorsN := survivors
+            cohortN := n
+            effectiveN := eff
+            countU := u
+            countD := d
+            countT := t
+            countA := a
+            soonU := u1
+            soonD := d1
+            laterU := u2
+            laterD := d2
+            stability := stable
+            baseU := bU
+            baseD := bD
+            baseT := bT
+            baseA := bA
+            forecastAge := age
+            bool enough = n >= minimum and eff >= minimum
+            if age == math.min(4, horizon - 1) and enough
+                evaluationReady := true
+                prediction := array.from(u, d, t, a)
+                baseline := array.from(bU, bD, bT, bA)
+                predictionSide := u >= d ? 1 : -1
+                predictionFav := math.max(u, d)
+            float favored = side == 1 ? u : d
+            float opposite = side == 1 ? d : u
+            strongCandidate := enough and eff >= 40 and stable == 1 and favored >= 0.65 and favored - opposite >= 0.20 and side * location >= 0.10 and side * velocity > 0
+            strongRun := strongCandidate ? strongRun + 1 : 0
+            if not strongIssued and strongRun >= 2
+                strongIssued := true
+                strongUp := side == 1
+                strongDown := side == -1
+                f_mark(bar_index, side == 1 ? low - 0.25 * scale : high + 0.25 * scale, side == 1 ? "Strong ▲" : "Strong ▼", side == 1 ? label.style_label_up : label.style_label_down, side == 1 ? UP : DN, "Additional closed-bar confirmation: effective sample >=40, historical side frequency >=65%, advantage >=20 points, supported older/recent agreement, forward progress, two consecutive closes. Heuristic grade, not a verified win rate. Initial arrow is not changed.", size.small)
+            int x1 = bar_index + int(math.ceil((horizon - age) / 3.0))
+            int x2 = bar_index + int(math.ceil(2.0 * (horizon - age) / 3.0))
+            line.set_xy1(milestone1, x1, lower)
+            line.set_xy2(milestone1, x1, upper)
+            line.set_xy1(milestone2, x2, lower)
+            line.set_xy2(milestone2, x2, upper)
+    // Never replace an active race or start a new one on its resolution bar.
+    bool cooled = na(lastEnd) or bar_index - lastEnd > cooldown
+    if not wasActive and cooled and (upBreak or downBreak)
+        active := true
+        newRace := true
+        side := upBreak ? 1 : -1
+        start := bar_index
+        age := 0
+        result := 0
+        origin := close
+        upper := origin + distance * scale
+        lower := origin - distance * scale
+        location := 0
+        currentPath := array.new_float(1, 0.0)
+        velocity := 0
+        strongRun := 0
+        strongIssued := false
+        evaluationReady := false
+        [n, eff, u, d, t, a, survivors, u1, d1, u2, d2, stable, bU, bD, bT, bA] = f_cohort(side, 0, 0, 0)
+        effectiveN := eff
+        soonU := u1
+        soonD := d1
+        laterU := u2
+        laterD := d2
+        stability := stable
+        baseU := bU
+        baseD := bD
+        baseT := bT
+        baseA := bA
+        survivorsN := survivors
+        startN := n
+        cohortN := n
+        countU := u
+        countD := d
+        countT := t
+        countA := a
+        forecastAge := 0
+        topLine := line.new(start, upper, start + horizon, upper, color = color.new(UP, 5), width = 2)
+        bottomLine := line.new(start, lower, start + horizon, lower, color = color.new(DN, 5), width = 2)
+        originLine := line.new(start, origin, start + horizon, origin, color = color.new(MUTED, 35), style = line.style_dashed)
+        raceBox := box.new(start, upper, start + horizon, lower, border_color = color.new(MUTED, 70), bgcolor = color.new(NEUTRAL, 95))
+        array.push(uppers, topLine)
+        array.push(lowers, bottomLine)
+        array.push(centers, originLine)
+        array.push(areas, raceBox)
+        int firstCut = start + int(math.ceil(horizon / 3.0))
+        int secondCut = start + int(math.ceil(2.0 * horizon / 3.0))
+        milestone1 := line.new(firstCut, lower, firstCut, upper, color = color.new(MUTED, 50), style = line.style_dotted)
+        milestone2 := line.new(secondCut, lower, secondCut, upper, color = color.new(MUTED, 50), style = line.style_dotted)
+        if array.size(areas) > retain
+            line.delete(array.shift(uppers))
+            line.delete(array.shift(lowers))
+            line.delete(array.shift(centers))
+            box.delete(array.shift(areas))
+        f_mark(start, side == 1 ? low - 0.25 * scale : high + 0.25 * scale, side == 1 ? "▲" : "▼", side == 1 ? label.style_label_up : label.style_label_down, side == 1 ? UP : DN, "Closing breakout starts a fixed-barrier race. Normal setup arrow; not a high-confidence or guaranteed trade signal.", size.small)
+
+bool enoughEvidence = cohortN >= minimum and effectiveN >= minimum
+int calibrationN = 0
+int calibrationHits = 0
+if array.size(checkFav) > 0
+    for i = 0 to array.size(checkFav) - 1
+        if array.get(checkFav, i) >= 0.60
+            calibrationN += 1
+            calibrationHits += array.get(checkHit, i)
+float modelBrier = array.size(checkModel) > 0 ? array.avg(checkModel) : na
+float baseBrier = array.size(checkBase) > 0 ? array.avg(checkBase) : na
+
+string panelPosition = panelCorner == "Top left" ? position.top_left : panelCorner == "Bottom right" ? position.bottom_right : panelCorner == "Bottom left" ? position.bottom_left : position.top_right
+var table evidence = table.new(panelPosition, 3, 10, bgcolor = PANEL, border_width = 0)
+if barstate.isfirst
+    table.merge_cells(evidence, 0, 0, 2, 0)
+// Harmony Algo | harmonyalgo.com — persistent distribution branding only.
+var table communityMark = table.new(position.middle_center, 1, 2, bgcolor = color.new(color.black, 100), border_width = 0)
+if barstate.islast
+    table.cell(communityMark, 0, 0, "Harmony Algo", text_color = color.new(#ABB3C2, 25), text_size = size.large)
+    table.cell(communityMark, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color = color.new(#ABB3C2, 15), text_size = size.small)
+    if showPanel
+        table.cell(evidence, 0, 0, "Harmony Algo | harmonyalgo.com", text_color = INK, text_size = size.small, bgcolor = #252D3D)
+        string state = na(start) ? "Waiting" : active ? (side == 1 ? "Up breakout" : "Down breakout") : result == 1 ? "UP first" : result == -1 ? "DOWN first" : result == 2 ? "No hit" : result == 3 ? "Both · unknown" : "Cancelled"
+        color stateColor = active ? NEUTRAL : result == 1 ? UP : result == -1 ? DN : PANEL
+        string motion = velocity > 0.03 ? "Moving up" : velocity < -0.03 ? "Moving down" : "Stalling"
+        string consistency = stability == 1 ? "Stable" : stability == -1 ? "Mixed" : "Limited"
+        int remain = math.max(0, horizon - forecastAge)
+        int k1 = int(math.ceil(remain / 3.0))
+        int k2 = int(math.ceil(2.0 * remain / 3.0))
+        string timing = active ? "By +" : "Prior +"
+        string detail = "Weighted historical endpoint frequencies. Same breakout side, same closed age, similar normalized price position; optional closing-velocity similarity sets weights only when enabled. Eff is the effective number of examples, not confidence. Old/recent consistency is a disclosed heuristic. Resolved races retain pre-result evidence."
+        table.cell(evidence, 0, 1, "TARGET RACE", text_color = INK, text_size = size.small, bgcolor = stateColor)
+        table.cell(evidence, 1, 1, active ? str.tostring(horizon - age) + " bars left" : "Latest result", text_color = INK, text_size = size.small, bgcolor = stateColor)
+        table.cell(evidence, 2, 1, state, text_color = INK, text_size = size.small, bgcolor = stateColor)
+        table.cell(evidence, 0, 2, motion, text_color = MUTED, text_size = size.small)
+        table.cell(evidence, 1, 2, "UP", text_color = #52C96B, text_size = size.small)
+        table.cell(evidence, 2, 2, "DOWN", text_color = #FF796C, text_size = size.small)
+        table.cell(evidence, 0, 3, timing + str.tostring(k1) + " bars", text_color = MUTED, text_size = size.small)
+        table.cell(evidence, 1, 3, f_rate(soonU, enoughEvidence), text_color = INK, text_size = size.small)
+        table.cell(evidence, 2, 3, f_rate(soonD, enoughEvidence), text_color = INK, text_size = size.small)
+        table.cell(evidence, 0, 4, timing + str.tostring(k2) + " bars", text_color = MUTED, text_size = size.small)
+        table.cell(evidence, 1, 4, f_rate(laterU, enoughEvidence), text_color = INK, text_size = size.small)
+        table.cell(evidence, 2, 4, f_rate(laterD, enoughEvidence), text_color = INK, text_size = size.small)
+        table.cell(evidence, 0, 5, "By deadline", text_color = MUTED, text_size = size.small)
+        table.cell(evidence, 1, 5, f_rate(countU, enoughEvidence), text_color = #52C96B, text_size = size.small)
+        table.cell(evidence, 2, 5, f_rate(countD, enoughEvidence), text_color = #FF796C, text_size = size.small)
+        table.cell(evidence, 0, 6, "Other outcomes", text_color = MUTED, text_size = size.tiny)
+        table.cell(evidence, 1, 6, "No hit " + f_rate(countT, enoughEvidence), text_color = MUTED, text_size = size.tiny)
+        table.cell(evidence, 2, 6, "Both " + f_rate(countA, enoughEvidence), text_color = MUTED, text_size = size.tiny)
+        table.cell(evidence, 0, 7, enoughEvidence ? consistency : "LEARNING", text_color = enoughEvidence ? MUTED : #F1C46A, text_size = size.small, tooltip = detail)
+        table.cell(evidence, 1, 7, "N " + str.tostring(cohortN), text_color = INK, text_size = size.small, tooltip = detail)
+        table.cell(evidence, 2, 7, "Eff " + str.tostring(effectiveN, "0.0"), text_color = INK, text_size = size.small, tooltip = detail)
+        string checkTip = "At age " + str.tostring(math.min(4, horizon - 1)) + ", freeze supported forecasts, then score only after resolution. Latest100 evaluated races. Four-class Brier: model " + str.tostring(modelBrier, "0.000") + ", position-only baseline " + str.tostring(baseBrier, "0.000") + ". Lower is better; not P&L, the Strong success rate, or independent validation."
+        table.cell(evidence, 0, 8, "Past checks ≥60%", text_color = MUTED, text_size = size.tiny, tooltip = checkTip)
+        table.cell(evidence, 1, 8, calibrationN >= 20 ? str.tostring(100.0 * calibrationHits / calibrationN, "0") + "% hit" : "Checking", text_color = MUTED, text_size = size.tiny, tooltip = checkTip)
+        table.cell(evidence, 2, 8, "N " + str.tostring(calibrationN), text_color = MUTED, text_size = size.tiny, tooltip = checkTip)
+        table.cell(evidence, 0, 9, "Past frequencies", text_color = MUTED, text_size = size.tiny, tooltip = detail)
+        table.cell(evidence, 1, 9, "Not win rates", text_color = MUTED, text_size = size.tiny)
+        table.cell(evidence, 2, 9, "Age " + str.tostring(forecastAge), text_color = MUTED, text_size = size.tiny)
+    else
+        table.clear(evidence, 0, 0, 2, 9)
+
+// Harmony Algo | harmonyalgo.com — unchanged data exports and alert predicates.
+// Data Window exports make the state machine and estimates inspectable.
+plot(na(start) ? na : upper, "Upper barrier", display = display.data_window)
+plot(na(start) ? na : lower, "Lower barrier", display = display.data_window)
+plot(active ? side : 0, "Active direction", display = display.data_window)
+plot(age, "Closed age", display = display.data_window)
+plot(result, "Outcome (1 up,-1 down,2 time,3 both,4 invalid)", display = display.data_window)
+plot(cohortN, "Surviving cohort", display = display.data_window)
+plot(enoughEvidence ? 100.0 * countU : na, "Historical UP first %", display = display.data_window)
+plot(enoughEvidence ? 100.0 * countD : na, "Historical DOWN first %", display = display.data_window)
+plot(enoughEvidence ? 100.0 * countT : na, "Historical no hit %", display = display.data_window)
+plot(enoughEvidence ? 100.0 * countA : na, "Historical ambiguous %", display = display.data_window)
+plot(survivorsN, "Surviving pool", display = display.data_window)
+plot(location, "Last evidence location", display = display.data_window)
+plot(newRace ? side : 0, "Setup event", display = display.data_window)
+plot(upperHit ? 1 : lowerHit ? -1 : timedOut ? 2 : ambiguous ? 3 : dataCancelled ? 4 : 0, "Resolution event", display = display.data_window)
+plot(effectiveN, "Effective sample", display = display.data_window)
+plot(velocity, "Closing velocity", display = display.data_window)
+plot(enoughEvidence ? 100 * soonU : na, "Upper by first milestone %", display = display.data_window)
+plot(enoughEvidence ? 100 * soonD : na, "Lower by first milestone %", display = display.data_window)
+plot(enoughEvidence ? 100 * laterU : na, "Upper by second milestone %", display = display.data_window)
+plot(enoughEvidence ? 100 * laterD : na, "Lower by second milestone %", display = display.data_window)
+plot(stability, "Consistency (1 stable,-1 mixed,0 limited)", display = display.data_window)
+plot(strongUp ? 1 : strongDown ? -1 : 0, "Strong event", display = display.data_window)
+plot(array.size(checkModel), "Scored races", display = display.data_window)
+plot(modelBrier, "Model Brier", display = display.data_window)
+plot(baseBrier, "Baseline Brier", display = display.data_window)
+plot(calibrationN, "High-rate checks", display = display.data_window)
+plot(calibrationN >= 20 ? 100.0 * calibrationHits / calibrationN : na, "Observed high-rate hits %", display = display.data_window)
+plot(strongCandidate ? 1 : 0, "Strong candidate", display = display.data_window)
+plot(forecastAge, "Evidence age", display = display.data_window)
+plot(baseU, "Baseline upper fraction", display = display.data_window)
+plot(baseD, "Baseline lower fraction", display = display.data_window)
+plot(baseT, "Baseline timeout fraction", display = display.data_window)
+plot(baseA, "Baseline ambiguous fraction", display = display.data_window)
+alertcondition(newRace, "New target race", "Target Race Map: new fixed-barrier race confirmed at close.")
+alertcondition(upperHit, "Upper barrier first", "Target Race Map: upper barrier reached first; confirmed at close.")
+alertcondition(lowerHit, "Lower barrier first", "Target Race Map: lower barrier reached first; confirmed at close.")
+alertcondition(timedOut, "Race deadline reached", "Target Race Map: deadline reached without either barrier hit.")
+alertcondition(ambiguous, "Both barriers — order unknown", "Target Race Map: both barriers touched in one bar; order is unknown.")
+alertcondition(dataCancelled, "Race cancelled — invalid data", "Target Race Map: active race cancelled due to invalid OHLC data.")
+alertcondition(strongUp, "Strong upward confirmation", "Target Race Map: Strong upward confirmation on this closing bar. Heuristic evidence grade; not a guaranteed trade.")
+alertcondition(strongDown, "Strong downward confirmation", "Target Race Map: Strong downward confirmation on this closing bar. Heuristic evidence grade; not a guaranteed trade.")
