@@ -44,6 +44,13 @@ input bool EnablePopupAlerts=false; // local terminal; no historical alert repla
 double Fit[],FitColor[],Lower[],Upper[],FillLow[],FillHigh[],UpMark[],DownMark[],LossMark[];
 double PriorATR[],FullMove[],MinimumMove[],MaximumMove[],State[],Event[],UpEvent[],DownEvent[],LossEvent[],ATR[];
 datetime lastOpen=0;
+int savedState=0,savedUp=0,savedDown=0,savedLoss=0;
+double savedFit=EMPTY_VALUE,savedLo=EMPTY_VALUE,savedHi=EMPTY_VALUE,savedUnit=EMPTY_VALUE;
+double savedFull=EMPTY_VALUE,savedMin=EMPTY_VALUE,savedMax=EMPTY_VALUE;
+int markers[];
+int doneClosed=-1;
+datetime firstHistory=0,closedStamp=0;
+
 string prefix;
 
 // Harmony Algo | harmonyalgo.com — branding independent of calculations.
@@ -107,25 +114,30 @@ int OnInit()
    Branding();return INIT_SUCCEEDED;
 }
 
-// Harmony Algo | harmonyalgo.com — chronological full recalculation on new bars.
+// Harmony Algo | harmonyalgo.com — incremental closed-bar calculation with explicit history reset.
 // Pine-style ATR: true range, initial SMA(21), then Wilder RMA; use previous bar.
-int OnCalculate(const int rates_total,const int prev_calculated,const datetime &time[],const double &open[],const double &high[],const double &low[],const double &close[],const long &tick_volume[],const long &volume[],const int &spread[])
+int OnCalculate(const int rates_total,const int previous,const datetime &time[],const double &open[],const double &high[],const double &low[],const double &close[],const long &tick_volume[],const long &volume[],const int &spread[])
 {
    ArraySetAsSeries(time,false);ArraySetAsSeries(high,false);ArraySetAsSeries(low,false);ArraySetAsSeries(close,false);
    if(rates_total<2)return 0;
-   if(prev_calculated==rates_total && lastOpen==time[rates_total-1])return rates_total;
-   bool notify=prev_calculated>0 && lastOpen>0 && time[rates_total-1]>lastOpen;
+   bool reset=previous==0 || previous>rates_total || doneClosed<0 || doneClosed>=rates_total || firstHistory!=time[0] || closedStamp!=time[doneClosed];
+ if(!reset && previous==rates_total && lastOpen==time[rates_total-1])return rates_total;
+ if(reset){doneClosed=-1;firstHistory=time[0];savedState=savedUp=savedDown=savedLoss=0;savedFit=savedLo=savedHi=savedUnit=savedFull=savedMin=savedMax=EMPTY_VALUE;ArrayResize(markers,0);}
+ int start=doneClosed+1;
+ 
+
+   bool notify=previous>0 && lastOpen>0 && time[rates_total-1]>lastOpen;
    lastOpen=time[rates_total-1];
-   int n=6*BarsPerSegment,st=0,uc=0,dc=0,lc=0;
-   double trsum=0,fit=EMPTY_VALUE,lo=EMPTY_VALUE,hi=EMPTY_VALUE,unit=EMPTY_VALUE;
-   double full=EMPTY_VALUE,mn=EMPTY_VALUE,mx=EMPTY_VALUE;
-   int markers[];ArrayResize(markers,0);
-   for(int i=0;i<rates_total;i++)
+   int n=6*BarsPerSegment,st=savedState,uc=savedUp,dc=savedDown,lc=savedLoss;
+   double fit=savedFit,lo=savedLo,hi=savedHi,unit=savedUnit;
+   double full=savedFull,mn=savedMin,mx=savedMax;
+   
+   for(int i=start;i<rates_total;i++)
    {
       UpMark[i]=DownMark[i]=LossMark[i]=EMPTY_VALUE;
       UpEvent[i]=DownEvent[i]=LossEvent[i]=Event[i]=0;
       double tr=i==0 ? high[i]-low[i] : MathMax(high[i]-low[i],MathMax(MathAbs(high[i]-close[i-1]),MathAbs(low[i]-close[i-1])));
-      if(i<21)trsum+=tr;
+      double trsum=0;if(i==20){for(int q=0;q<=20;q++)trsum+=q==0?high[q]-low[q]:MathMax(high[q]-low[q],MathMax(MathAbs(high[q]-close[q-1]),MathAbs(low[q]-close[q-1])));}
       ATR[i]=i<20 ? EMPTY_VALUE : i==20 ? trsum/21.0 : (ATR[i-1]*20.0+tr)/21.0;
       if(i<rates_total-1) // unfinished bar always holds last committed values
       {
@@ -175,8 +187,11 @@ int OnCalculate(const int rates_total,const int prev_calculated,const datetime &
       PriorATR[i]=unit;FullMove[i]=full;MinimumMove[i]=mn;MaximumMove[i]=mx;State[i]=st;
    }
    // Arrow placements replace Pine labels; diagnostic events retain all history.
-   for(int j=0;j<ArraySize(markers)-RetainedDirectionMarkers;j++){UpMark[markers[j]]=EMPTY_VALUE;DownMark[markers[j]]=EMPTY_VALUE;}
-   int k=rates_total-2;
+   int excess=ArraySize(markers)-RetainedDirectionMarkers;
+   if(excess>0){int count=ArraySize(markers);for(int j=0;j<excess;j++){UpMark[markers[j]]=EMPTY_VALUE;DownMark[markers[j]]=EMPTY_VALUE;}for(int j=excess;j<count;j++)markers[j-excess]=markers[j];ArrayResize(markers,count-excess);}
+   savedState=st;savedUp=uc;savedDown=dc;savedLoss=lc;savedFit=fit;savedLo=lo;savedHi=hi;savedUnit=unit;savedFull=full;savedMin=mn;savedMax=mx;
+ doneClosed=rates_total-2;closedStamp=time[doneClosed];
+ int k=rates_total-2;
    if(EnablePopupAlerts && notify)
    {
       if(UpEvent[k]>0)Alert("Trend Stress: Up support confirmed on ",_Symbol," ",EnumToString(_Period));
