@@ -1,0 +1,51 @@
+Period Excursion Map — Community validation, 16 November 2026
+
+Clean TradingView publication: https://www.tradingview.com/script/YHqfB3Ej-Period-Excursion-Map-Harmony-Algo/
+Clean Pine SHA256: a1d7c6db3d9db87a9ac7ccf9196183d90a7b06a64b70bcce0336a5a7816bf0b0
+Community Pine SHA256: b7d06723850529425a7c5fc0d1adf15246bea6acb394bb2894341f1ff53f7dd5
+
+MetaEditor build 6230: 0 errors, 0 warnings; real EX5 produced.
+Real terminal default-history tests: EURUSD and GBPUSD, H1 and H4. Loaded broker sample history is from 2024; this is not a live market test.
+[
+  {
+    "file": "PeriodExcursionMap-Community-MT5-EURUSD-PERIOD_H1.csv",
+    "rates": 3975,
+    "comparisons": 3000,
+    "reference_days": 127,
+    "differences": [],
+    "status": "pass",
+    "scope": "Daily default map ordering/freeze/first-closing-event checks; not full higher-timeframe numerical parity"
+  },
+  {
+    "file": "PeriodExcursionMap-Community-MT5-EURUSD-PERIOD_H4.csv",
+    "rates": 996,
+    "comparisons": 996,
+    "reference_days": 127,
+    "differences": [],
+    "status": "pass",
+    "scope": "Daily default map ordering/freeze/first-closing-event checks; not full higher-timeframe numerical parity"
+  },
+  {
+    "file": "PeriodExcursionMap-Community-MT5-GBPUSD-PERIOD_H1.csv",
+    "rates": 3975,
+    "comparisons": 3000,
+    "reference_days": 127,
+    "differences": [],
+    "status": "pass",
+    "scope": "Daily default map ordering/freeze/first-closing-event checks; not full higher-timeframe numerical parity"
+  },
+  {
+    "file": "PeriodExcursionMap-Community-MT5-GBPUSD-PERIOD_H4.csv",
+    "rates": 996,
+    "comparisons": 996,
+    "reference_days": 127,
+    "differences": [],
+    "status": "pass",
+    "scope": "Daily default map ordering/freeze/first-closing-event checks; not full higher-timeframe numerical parity"
+  }
+]
+
+Period Excursion checks cover default daily map order, freezing and first closing breach; no full higher-timeframe numerical parity claim. Other checks compare selected model fields and events against independent specifications on the same exported OHLC history.
+The current unclosed bar has no committed event. Local popup delivery on new live ticks, profitability, full parameter sweeps, mobile layout and exact cross-feed TradingView equality are not verified.
+All closed-bar indicators can recalculate if source history or parameters change.
+CodeBase is a separate ad-free derivative. Its publication status is recorded separately; no draft URL is an official product link.

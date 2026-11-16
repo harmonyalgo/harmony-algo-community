@@ -1,0 +1,131 @@
+//@version=6
+// Original implementation by Iamalala. Mozilla Public License 2.0.
+// Harmony Algo community distribution — harmonyalgo.com
+// Historical excursion context; not a trading system.
+indicator("Period Excursion Map Community [Harmony Algo]", overlay = true, max_lines_count = 5)
+
+string anchorTF = input.timeframe("1D", "Reference period", options = ["1D", "1W", "1M"])
+int memory = input.int(80, "Completed periods in memory", minval = 20, maxval = 250)
+int atrLength = input.int(20, "Reference-period ATR length", minval = 5, maxval = 100)
+int outerPct = input.int(80, "Outer historical percentile", minval = 60, maxval = 95)
+bool showPanel = input.bool(true, "Show context panel")
+bool showEvents = input.bool(true, "Mark first close beyond outer levels")
+color upColor = input.color(#018208, "Upper excursion")
+color downColor = input.color(#D12208, "Lower excursion")
+
+if timeframe.in_seconds() >= timeframe.in_seconds(anchorTF)
+    runtime.error("Choose a chart timeframe strictly below the reference period.")
+
+// Harmony Algo | harmonyalgo.com — unchanged completed-period sampling.
+// Every requested value is offset: the open reference period never trains itself.
+// The previous completed period started from close[2] with ATR[2] known then.
+[pastHigh, pastLow, pastStart, pastScale, newStart, newScale] = request.security(syminfo.tickerid, anchorTF, [high[1], low[1], close[2], ta.atr(atrLength)[2], close[1], ta.atr(atrLength)[1]], lookahead = barmerge.lookahead_on)
+bool rollover = timeframe.change(anchorTF)
+var array<float> upperSamples = array.new_float()
+var array<float> lowerSamples = array.new_float()
+var float base = na
+var float upper50 = na
+var float upperOuter = na
+var float lower50 = na
+var float lowerOuter = na
+var bool upperSeen = false
+var bool lowerSeen = false
+var int sampleCount = 0
+
+if rollover
+    if not na(pastScale) and pastScale > 0 and not na(pastStart)
+        array.push(upperSamples, math.max(pastHigh - pastStart, 0) / pastScale)
+        array.push(lowerSamples, math.max(pastStart - pastLow, 0) / pastScale)
+        if array.size(upperSamples) > memory
+            array.shift(upperSamples)
+            array.shift(lowerSamples)
+    sampleCount := array.size(upperSamples)
+    base := na
+    upper50 := na
+    upperOuter := na
+    lower50 := na
+    lowerOuter := na
+    upperSeen := false
+    lowerSeen := false
+    if sampleCount >= 20 and not na(newScale) and newScale > 0
+        array<float> sortedUp = array.copy(upperSamples)
+        array<float> sortedDown = array.copy(lowerSamples)
+        array.sort(sortedUp)
+        array.sort(sortedDown)
+        base := newStart
+        upper50 := base + array.percentile_nearest_rank(sortedUp, 50) * newScale
+        upperOuter := base + array.percentile_nearest_rank(sortedUp, outerPct) * newScale
+        lower50 := base - array.percentile_nearest_rank(sortedDown, 50) * newScale
+        lowerOuter := base - array.percentile_nearest_rank(sortedDown, outerPct) * newScale
+
+bool ready = not na(base)
+bool upperEvent = barstate.isconfirmed and ready and not upperSeen and close > upperOuter
+bool lowerEvent = barstate.isconfirmed and ready and not lowerSeen and close < lowerOuter
+if upperEvent
+    upperSeen := true
+if lowerEvent
+    lowerSeen := true
+
+// Harmony Algo | harmonyalgo.com — original frozen map and event display.
+// Break the historical plot at each rollover so unrelated maps are not joined.
+float drawBase = rollover ? na : base
+float drawU50 = rollover ? na : upper50
+float drawUO = rollover ? na : upperOuter
+float drawL50 = rollover ? na : lower50
+float drawLO = rollover ? na : lowerOuter
+plot(drawBase, "Previous period close", color = color.new(color.white, 45), style = plot.style_linebr)
+pu50 = plot(drawU50, "Upper median excursion", color = color.new(upColor, 35), style = plot.style_linebr)
+puo = plot(drawUO, "Upper outer excursion", color = upColor, linewidth = 2, style = plot.style_linebr)
+pl50 = plot(drawL50, "Lower median excursion", color = color.new(downColor, 35), style = plot.style_linebr)
+plo = plot(drawLO, "Lower outer excursion", color = downColor, linewidth = 2, style = plot.style_linebr)
+fill(pu50, puo, color = color.new(upColor, 92), title = "Upper excursion zone", fillgaps = false)
+fill(pl50, plo, color = color.new(downColor, 92), title = "Lower excursion zone", fillgaps = false)
+plotshape(showEvents and upperEvent, "First upper close", shape.circle, location.abovebar, upColor, size = size.tiny)
+plotshape(showEvents and lowerEvent, "First lower close", shape.circle, location.belowbar, downColor, size = size.tiny)
+// Unbroken values for the Data Window also expose the first bar's frozen map.
+plot(base, "Frozen anchor", display = display.data_window)
+plot(upperOuter, "Frozen upper outer", display = display.data_window)
+plot(lowerOuter, "Frozen lower outer", display = display.data_window)
+plot(sampleCount, "Completed sample count", display = display.data_window)
+plot(upperEvent ? 1 : lowerEvent ? -1 : 0, "Confirmed event", display = display.data_window)
+
+// Keep the active map visible from the very first bar, including coarse charts.
+// Only the active period uses objects; historical plots retain explicit gaps.
+var array<line> activeLines = array.new_line()
+if barstate.isfirst
+    for i = 0 to 4
+        array.push(activeLines, line.new(time, na, time, na, xloc = xloc.bar_time))
+if barstate.islast
+    array<float> levels = array.from(base, upper50, upperOuter, lower50, lowerOuter)
+    array<color> colors = array.from(color.new(color.white, 45), color.new(upColor, 35), upColor, color.new(downColor, 35), downColor)
+    for i = 0 to 4
+        line levelLine = array.get(activeLines, i)
+        line.set_xy1(levelLine, time(anchorTF), array.get(levels, i))
+        line.set_xy2(levelLine, time_close(anchorTF), array.get(levels, i))
+        line.set_color(levelLine, array.get(colors, i))
+        line.set_width(levelLine, i == 2 or i == 4 ? 2 : 1)
+
+var table panel = table.new(position.top_right, 2, 4, bgcolor = color.new(#15151E, 12))
+if barstate.islast
+    if showPanel
+        table.cell(panel, 0, 0, "Harmony Algo", text_color = color.white, text_size = size.small)
+        table.cell(panel, 1, 0, "harmonyalgo.com", text_color = #B69ADD, text_size = size.small)
+        string context = not ready ? "Building history" : close > upperOuter ? "Above upper extent" : close < lowerOuter ? "Below lower extent" : "Within outer extents"
+        table.cell(panel, 0, 1, "Excursion map", text_color = color.white, text_size = size.small)
+        table.cell(panel, 1, 1, anchorTF + " | P" + str.tostring(outerPct), text_color = color.white, text_size = size.small)
+        table.cell(panel, 0, 2, "Completed periods", text_color = color.silver, text_size = size.small)
+        table.cell(panel, 1, 2, str.tostring(sampleCount) + "/" + str.tostring(memory), text_color = color.white, text_size = size.small)
+        table.cell(panel, 0, 3, context, text_color = color.white, text_size = size.small)
+        table.cell(panel, 1, 3, "Historical, not odds", text_color = #B69ADD, text_size = size.small)
+    else
+        table.clear(panel, 0, 0, 1, 3)
+
+alertcondition(upperEvent, "First close beyond upper extent", "Period Excursion Map: first confirmed close above the frozen upper historical excursion extent on {{ticker}} {{interval}}. Context only; not a buy signal.")
+alertcondition(lowerEvent, "First close beyond lower extent", "Period Excursion Map: first confirmed close below the frozen lower historical excursion extent on {{ticker}} {{interval}}. Context only; not a sell signal.")
+
+// Harmony Algo | harmonyalgo.com — permanent distribution branding only.
+// This open-source file can be edited; branding is independent of calculations.
+var table communityBrand = table.new(position.middle_center, 1, 2, bgcolor = color.new(#15151E, 88))
+if barstate.islast
+    table.cell(communityBrand, 0, 0, "Harmony Algo", text_color = color.new(color.white, 25), text_size = size.normal)
+    table.cell(communityBrand, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color = color.new(color.white, 25), text_size = size.small)
