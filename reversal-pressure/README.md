@@ -40,3 +40,9 @@ MetaEditor build 6230 compiled the included MQ5 with zero errors and warnings. A
 This download intentionally includes a visible Harmony Algo watermark and website callout without a hide input. Editable source can be modified; this is not copy protection. Explore premium **TradingView** indicators at https://harmonyalgo.com. No premium MT5 product is promised.
 
 CodeBase uses a separate ad-free derivative; its draft is not an official public link. Existing clean TradingView publications are unchanged. See LICENSE.md and SHA256SUMS.txt.
+
+## MT5 validation fix — 16 November 2026
+
+MT5 now retains the latest closed-bar model state and ATR between updates. It no longer rebuilds every historical preparation and graphic on each bar. Explicit history resets rebuild the full model. Calculations, inputs and closing events are unchanged.
+
+The updated native model matched all original exported fields on EURUSD/GBPUSD H1/H4 loaded sample history (12 cuts across the three tools). Stress/Reversal also passed native MQL5 growing-history and explicit-reset comparisons across 1,499 successive calls per tool. The calculation tests suppress graphics; actual indicator charts were tested separately. Period additionally passed native daily-chart attachment with empty levels and zero events. CodeBase server validation is separate and still pending.

@@ -45,6 +45,12 @@ double B21[];
 double B22[];
 double B23[];
 string prefix;datetime lastOpen=0;
+struct RecoveryCheckpoint {int phase,side,started,triggered,ended,lastSignal;double center,unit,extreme,evidence,required,invalidation,lastLong,lastShort;bool fatigue,guard,longLocked,shortLocked;string centerRail,stopRail;};
+RecoveryCheckpoint saved;
+double atr[];
+int doneClosed=-1;
+datetime firstHistory=0,closedStamp=0;
+
 string marks[],maps[];
 void Text(const string key,const string text,int x,int y,int size=10,ENUM_ANCHOR_POINT anchor=ANCHOR_LEFT_UPPER)
 {
@@ -149,19 +155,25 @@ PlotIndexSetInteger(5,PLOT_DRAW_TYPE,DRAW_ARROW);PlotIndexSetString(5,PLOT_LABEL
 PlotIndexSetInteger(6,PLOT_DRAW_TYPE,DRAW_ARROW);PlotIndexSetString(6,PLOT_LABEL,"Outcome");PlotIndexSetInteger(6,PLOT_LINE_COLOR,clrSilver);PlotIndexSetInteger(6,PLOT_ARROW,233);IndicatorSetString(INDICATOR_SHORTNAME,"Reversal Pressure Community [Harmony Algo]");IndicatorSetInteger(INDICATOR_DIGITS,_Digits);prefix="ReversalPressure_"+IntegerToString(ChartID())+"_"+IntegerToString((long)GetMicrosecondCount())+"_";Brand();return INIT_SUCCEEDED;}int OnCalculate(const int total,const int previous,const datetime &time[],const double &open[],const double &high[],const double &low[],const double &close[],const long &tick_volume[],const long &volume[],const int &spread[])
 {
  ArraySetAsSeries(time,false);ArraySetAsSeries(open,false);ArraySetAsSeries(high,false);ArraySetAsSeries(low,false);ArraySetAsSeries(close,false);
- if(total<2)return 0;if(previous==total && lastOpen==time[total-1])return total;
+ if(total<2)return 0;bool reset=previous==0 || previous>total || doneClosed<0 || doneClosed>=total || firstHistory!=time[0] || closedStamp!=time[doneClosed];
+ if(!reset && previous==total && lastOpen==time[total-1])return total;
+ if(reset){doneClosed=-1;firstHistory=time[0];saved.phase=saved.side=0;saved.started=saved.triggered=saved.lastSignal=-1;saved.ended=-100000;saved.center=saved.unit=saved.extreme=saved.required=saved.invalidation=saved.lastLong=saved.lastShort=EMPTY_VALUE;saved.evidence=0;saved.fatigue=saved.guard=saved.longLocked=saved.shortLocked=false;saved.centerRail=saved.stopRail="";}
+ int start=doneClosed+1;
+ 
+
  bool notify=previous>0 && lastOpen>0 && time[total-1]>lastOpen;lastOpen=time[total-1];
- ObjectsDeleteAll(0,prefix);ArrayResize(marks,0);ArrayResize(maps,0);
-ArrayInitialize(B0,EMPTY_VALUE);ArrayInitialize(B1,EMPTY_VALUE);ArrayInitialize(B2,EMPTY_VALUE);ArrayInitialize(B3,EMPTY_VALUE);ArrayInitialize(B4,EMPTY_VALUE);ArrayInitialize(B5,EMPTY_VALUE);ArrayInitialize(B6,EMPTY_VALUE);ArrayInitialize(B7,EMPTY_VALUE);ArrayInitialize(B8,EMPTY_VALUE);ArrayInitialize(B9,EMPTY_VALUE);ArrayInitialize(B10,EMPTY_VALUE);ArrayInitialize(B11,EMPTY_VALUE);ArrayInitialize(B12,EMPTY_VALUE);ArrayInitialize(B13,EMPTY_VALUE);ArrayInitialize(B14,EMPTY_VALUE);ArrayInitialize(B15,EMPTY_VALUE);ArrayInitialize(B16,EMPTY_VALUE);ArrayInitialize(B17,EMPTY_VALUE);ArrayInitialize(B18,EMPTY_VALUE);ArrayInitialize(B19,EMPTY_VALUE);ArrayInitialize(B20,EMPTY_VALUE);ArrayInitialize(B21,EMPTY_VALUE);ArrayInitialize(B22,EMPTY_VALUE);ArrayInitialize(B23,EMPTY_VALUE);
- double atr[],rsi[];ArrayResize(atr,total);ArrayResize(rsi,total);double trsum=0,gain=0,loss=0;
- int phase=0,side=0,started=-1,triggered=-1,ended=-100000,lastSignal=-1;
- double center=EMPTY_VALUE,unit=EMPTY_VALUE,extreme=EMPTY_VALUE,evidence=0,required=EMPTY_VALUE,invalidation=EMPTY_VALUE;
- bool fatigue=false,guard=false,longLocked=false,shortLocked=false;double lastLong=EMPTY_VALUE,lastShort=EMPTY_VALUE;
- string centerRail="",stopRail="";
- for(int i=0;i<total;i++)
+ if(reset){ObjectsDeleteAll(0,prefix);ArrayResize(marks,0);ArrayResize(maps,0);}
+
+ ArrayResize(atr,total);
+ int phase=saved.phase,side=saved.side,started=saved.started,triggered=saved.triggered,ended=saved.ended,lastSignal=saved.lastSignal;
+ double center=saved.center,unit=saved.unit,extreme=saved.extreme,evidence=saved.evidence,required=saved.required,invalidation=saved.invalidation,lastLong=saved.lastLong,lastShort=saved.lastShort;
+ bool fatigue=saved.fatigue,guard=saved.guard,longLocked=saved.longLocked,shortLocked=saved.shortLocked;
+ string centerRail=saved.centerRail,stopRail=saved.stopRail;
+ for(int i=start;i<total;i++)
  {
+B0[i]=EMPTY_VALUE;B1[i]=EMPTY_VALUE;B2[i]=EMPTY_VALUE;B3[i]=EMPTY_VALUE;B4[i]=EMPTY_VALUE;B5[i]=EMPTY_VALUE;B6[i]=EMPTY_VALUE;B7[i]=EMPTY_VALUE;B8[i]=EMPTY_VALUE;B9[i]=EMPTY_VALUE;B10[i]=EMPTY_VALUE;B11[i]=EMPTY_VALUE;B12[i]=EMPTY_VALUE;B13[i]=EMPTY_VALUE;B14[i]=EMPTY_VALUE;B15[i]=EMPTY_VALUE;B16[i]=EMPTY_VALUE;B17[i]=EMPTY_VALUE;B18[i]=EMPTY_VALUE;B19[i]=EMPTY_VALUE;B20[i]=EMPTY_VALUE;B21[i]=EMPTY_VALUE;B22[i]=EMPTY_VALUE;B23[i]=EMPTY_VALUE;
   double tr=i==0?high[i]-low[i]:MathMax(high[i]-low[i],MathMax(MathAbs(high[i]-close[i-1]),MathAbs(low[i]-close[i-1])));
-  if(i<21)trsum+=tr;atr[i]=i<20?EMPTY_VALUE:i==20?trsum/21:(atr[i-1]*20+tr)/21;
+  double trsum=0;if(i==20){for(int q=0;q<=20;q++)trsum+=q==0?high[q]-low[q]:MathMax(high[q]-low[q],MathMax(MathAbs(high[q]-close[q-1]),MathAbs(low[q]-close[q-1])));}atr[i]=i<20?EMPTY_VALUE:i==20?trsum/21:(atr[i-1]*20+tr)/21;
   double median=EMPTY_VALUE,scale=EMPTY_VALUE,stretch=EMPTY_VALUE,efficiency=0;
   if(i>=LocationWindow && i>21 && atr[i-1]!=EMPTY_VALUE)
   {
@@ -221,6 +233,8 @@ ArrayInitialize(B0,EMPTY_VALUE);ArrayInitialize(B1,EMPTY_VALUE);ArrayInitialize(
   if(end==-1||end==1||end==2)B6[i]=close[i];
   B7[i]=phase;B8[i]=side;B9[i]=stretch;B10[i]=center;B11[i]=unit;B12[i]=extreme;B13[i]=evidence;B14[i]=required;B15[i]=fatigue?1:0;B16[i]=invalidation;B17[i]=arm;B18[i]=signal;B19[i]=end;B20[i]=efficiency;B21[i]=i>0?atr[i-1]:EMPTY_VALUE;B22[i]=median;B23[i]=scale;
  }
+ saved.phase=phase;saved.side=side;saved.started=started;saved.triggered=triggered;saved.ended=ended;saved.lastSignal=lastSignal;saved.center=center;saved.unit=unit;saved.extreme=extreme;saved.evidence=evidence;saved.required=required;saved.invalidation=invalidation;saved.lastLong=lastLong;saved.lastShort=lastShort;saved.fatigue=fatigue;saved.guard=guard;saved.longLocked=longLocked;saved.shortLocked=shortLocked;saved.centerRail=centerRail;saved.stopRail=stopRail;
+ doneClosed=total-2;closedStamp=time[doneClosed];
  int k=total-2;
  if(ShowStatusPanel){int w=(int)ChartGetInteger(0,CHART_WIDTH_IN_PIXELS),h=(int)ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);int x=StatusCorner==TopRight||StatusCorner==BottomRight?w-350:12,y=StatusCorner==BottomLeft||StatusCorner==BottomRight?h-100:22;
   Text("panelbrand","Harmony Algo | harmonyalgo.com",x,y);Text("panel","Reversal Pressure | Phase "+IntegerToString((int)B7[k])+" | Side "+IntegerToString((int)B8[k]),x,y+18);Text("evidence","Recovery "+DoubleToString(B13[k],2)+" / "+DoubleToString(B14[k],2)+" ATR",x,y+36);}
