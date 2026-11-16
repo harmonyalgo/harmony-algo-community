@@ -1,0 +1,43 @@
+Price Rank Shift — Community validation, 16 November 2026
+
+Clean TradingView publication: https://www.tradingview.com/script/GuHXtwsO-Price-Rank-Shift-Harmony-Algo/
+Clean Pine SHA256: cea29a2303614e0d93fe36d18e99784ab95a73865ce0a30c1e6f1a1e614b9d26
+Community Pine SHA256: 46db6a622953205c748c03e262669fe0216afb17039a77ca72d96e2241814505
+
+MetaEditor build 6230: 0 errors, 0 warnings; real EX5 produced.
+Real terminal default-history tests: EURUSD and GBPUSD, H1 and H4. Loaded broker sample history is from 2024; this is not a live market test.
+[
+  {
+    "file": "PriceRankShift-Community-MT5-EURUSD-PERIOD_H1.csv",
+    "rates": 3975,
+    "comparisons": 35988,
+    "differences": [],
+    "status": "pass"
+  },
+  {
+    "file": "PriceRankShift-Community-MT5-EURUSD-PERIOD_H4.csv",
+    "rates": 996,
+    "comparisons": 11472,
+    "differences": [],
+    "status": "pass"
+  },
+  {
+    "file": "PriceRankShift-Community-MT5-GBPUSD-PERIOD_H1.csv",
+    "rates": 3975,
+    "comparisons": 35988,
+    "differences": [],
+    "status": "pass"
+  },
+  {
+    "file": "PriceRankShift-Community-MT5-GBPUSD-PERIOD_H4.csv",
+    "rates": 996,
+    "comparisons": 11472,
+    "differences": [],
+    "status": "pass"
+  }
+]
+
+Period Excursion checks cover default daily map order, freezing and first closing breach; no full higher-timeframe numerical parity claim. Other checks compare selected model fields and events against independent specifications on the same exported OHLC history.
+The current unclosed bar has no committed event. Local popup delivery on new live ticks, profitability, full parameter sweeps, mobile layout and exact cross-feed TradingView equality are not verified.
+All closed-bar indicators can recalculate if source history or parameters change.
+CodeBase is a separate ad-free derivative. Its publication status is recorded separately; no draft URL is an official product link.

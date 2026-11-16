@@ -1,0 +1,114 @@
+//@version=6
+// Price Rank Shift Community — Harmony Algo | harmonyalgo.com
+// Original implementation of a rank effect state map.
+// Copyright (c) 2026 Harmony Algo. Licensed under the Mozilla Public License 2.0.
+indicator("Price Rank Shift Community [Harmony Algo]", shorttitle="Rank Shift", overlay=true, max_bars_back=100, max_labels_count=500)
+
+int block = input.int(20, "Closes per block", minval=8, maxval=40, group="Rank model", tooltip="Compare two adjacent, disjoint blocks. Total lookback is twice this number.")
+float enter = input.float(0.70, "Directional rank effect", minval=0.55, maxval=0.95, step=0.05, group="Rank model", tooltip="Signed pair-ordering effect, not a future success probability.")
+float leave = input.float(0.20, "Loss-of-ordering threshold", minval=0.0, maxval=0.50, step=0.05, group="Rank model")
+int persistence = input.int(3, "Consecutive confirming closes", minval=1, maxval=8, group="Rank model")
+float gapFloor = input.float(0.50, "Minimum median gap / prior ATR", minval=0.0, maxval=3.0, step=0.10, group="Rank model", tooltip="Stops tiny but perfectly ordered moves from qualifying. ATR length is 21.")
+bool showPanel = input.bool(true, "Show state panel", group="Display")
+color upColor = input.color(#018208, "Up", group="Display")
+color downColor = input.color(#D12208, "Down", group="Display")
+color flatColor = input.color(#7F49DE, "Neutral", group="Display")
+
+if barstate.isfirst and (not chart.is_standard or not timeframe.isintraday and not timeframe.isdaily and not timeframe.isweekly and not timeframe.ismonthly)
+    runtime.error("Use standard time-based candles. Synthetic-price and non-time charts are unsupported.")
+
+float priorATR = ta.atr(21)[1]
+var float effect = na
+var float newerMedian = na
+var float olderMedian = na
+var float gapATR = na
+var float usedATR = na
+var int state = 0
+var int upCount = 0
+var int downCount = 0
+var int weakCount = 0
+bool upEvent = false
+bool downEvent = false
+bool neutralEvent = false
+bool ready = bar_index >= 2 * block - 1 and not na(priorATR) and priorATR > 0
+
+// Harmony Algo | harmonyalgo.com — unchanged rank calculation.
+// Pair-count effect with exact ties; no distributional or independence assumption.
+if barstate.isconfirmed and ready
+    float pairScore = 0.0
+    array<float> newer = array.new<float>()
+    array<float> older = array.new<float>()
+    for i = 0 to block - 1
+        array.push(newer, close[i])
+        array.push(older, close[block + i])
+        for j = block to 2 * block - 1
+            pairScore += close[i] > close[j] ? 1.0 : close[i] < close[j] ? -1.0 : 0.0
+    effect := pairScore / (block * block)
+    newerMedian := array.median(newer)
+    olderMedian := array.median(older)
+    usedATR := priorATR
+    gapATR := (newerMedian - olderMedian) / usedATR
+    bool qualifiesUp = effect >= enter and gapATR >= gapFloor
+    bool qualifiesDown = effect <= -enter and gapATR <= -gapFloor
+    upCount := qualifiesUp ? math.min(upCount + 1, persistence) : 0
+    downCount := qualifiesDown ? math.min(downCount + 1, persistence) : 0
+    weakCount := state != 0 and state * effect <= leave ? math.min(weakCount + 1, persistence) : 0
+    int nextState = state
+    // Opposite entry wins over a simultaneous neutralization.
+    if upCount >= persistence
+        nextState := 1
+    else if downCount >= persistence
+        nextState := -1
+    else if weakCount >= persistence
+        nextState := 0
+    upEvent := nextState == 1 and state != 1
+    downEvent := nextState == -1 and state != -1
+    neutralEvent := nextState == 0 and state != 0
+    if nextState != state
+        weakCount := 0
+    state := nextState
+
+color stateColor = state == 1 ? upColor : state == -1 ? downColor : flatColor
+oldPlot = plot(olderMedian, "Earlier block median", color=color.new(color.white, 35), linewidth=1, style=plot.style_stepline)
+newPlot = plot(newerMedian, "Recent block median", color=stateColor, linewidth=2, style=plot.style_stepline)
+fill(oldPlot, newPlot, color=color.new(stateColor, 91), title="Median relocation")
+if upEvent
+    label.new(bar_index, low - usedATR * 0.30, "Up", style=label.style_label_up, color=upColor, textcolor=color.white, size=size.small)
+if downEvent
+    label.new(bar_index, high + usedATR * 0.30, "Down", style=label.style_label_down, color=downColor, textcolor=color.white, size=size.small)
+plotshape(neutralEvent, title="Ordering lost", style=shape.circle, location=location.abovebar, color=flatColor, size=size.tiny)
+
+var table panel = table.new(position.top_right, 2, 4, bgcolor=color.new(#151722, 10), border_width=0)
+if barstate.isfirst
+    table.merge_cells(panel, 0, 0, 1, 0)
+if barstate.islast and showPanel
+    table.cell(panel, 0, 0, "Harmony Algo | harmonyalgo.com", text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 1, "Rank shift", text_color=color.white, text_size=size.small)
+    table.cell(panel, 1, 1, na(effect) ? "Warming up" : state == 1 ? "Up" : state == -1 ? "Down" : "Neutral", text_color=stateColor, text_size=size.small)
+    table.cell(panel, 0, 2, "Rank effect", text_color=color.silver, text_size=size.small)
+    table.cell(panel, 1, 2, str.tostring(effect, "0.00"), text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 3, "Median gap / ATR", text_color=color.silver, text_size=size.small)
+    table.cell(panel, 1, 3, str.tostring(gapATR, "0.00"), text_color=color.white, text_size=size.small)
+
+// Harmony Algo | harmonyalgo.com — original events and alerts retained.
+// Data-window diagnostics use the same committed state and actual alert booleans.
+plot(effect, "Rank effect", display=display.data_window)
+plot(gapATR, "Median gap / ATR", display=display.data_window)
+plot(usedATR, "Prior ATR used", display=display.data_window)
+plot(state, "State", display=display.data_window)
+plot(upCount, "Up persistence", display=display.data_window)
+plot(downCount, "Down persistence", display=display.data_window)
+plot(weakCount, "Weak persistence", display=display.data_window)
+plot(upEvent ? 1 : 0, "Up event", display=display.data_window)
+plot(downEvent ? 1 : 0, "Down event", display=display.data_window)
+plot(neutralEvent ? 1 : 0, "Neutral event", display=display.data_window)
+alertcondition(upEvent, "Up rank shift", "Confirmed upward price-rank shift on {{ticker}} {{interval}}.")
+alertcondition(downEvent, "Down rank shift", "Confirmed downward price-rank shift on {{ticker}} {{interval}}.")
+alertcondition(neutralEvent, "Ordering lost", "Directional price ordering lost on {{ticker}} {{interval}}.")
+
+// Permanent Community branding, separate from all calculations and alerts.
+var table communityBrand = table.new(position.middle_center, 1, 3, bgcolor=color.new(color.black, 100))
+if barstate.islast
+    table.cell(communityBrand, 0, 0, "Harmony Algo | harmonyalgo.com", text_color=color.new(color.white, 35), text_size=size.normal)
+    table.cell(communityBrand, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color=color.new(color.white, 35), text_size=size.small)
+    table.cell(communityBrand, 0, 2, "", height=24)
