@@ -1,0 +1,211 @@
+//@version=6
+// Harmony Algo Community — harmonyalgo.com
+// Original implementation by Iamalala. Mozilla Public License 2.0.
+indicator("Intrinsic Trend Anatomy Community [Harmony Algo]", overlay = true, max_labels_count = 150, max_bars_back = 500)
+
+string g1 = "Event structure"
+int atrLen = input.int(30, "Volatility reference", minval = 5, maxval = 100, group = g1)
+float structureK = input.float(3.0, "Structure distance (ATR)", minval = 1.0, maxval = 10.0, step = 0.25, group = g1)
+float microRatio = input.float(0.35, "Micro / structure scale", minval = 0.15, maxval = 0.75, step = 0.05, group = g1)
+float broadRatio = input.float(2.0, "Broad / structure scale", minval = 1.25, maxval = 4.0, step = 0.25, group = g1)
+string g2 = "Completed pullback memory"
+int memory = input.int(80, "Completed excursions retained", minval = 20, maxval = 200, group = g2)
+int minSamples = input.int(12, "Minimum reference samples", minval = 8, maxval = 20, group = g2)
+string g3 = "Appearance"
+bool paintBars = input.bool(true, "Color candles", group = g3)
+bool showBoundary = input.bool(true, "Structure boundary", group = g3)
+bool showCorridor = input.bool(true, "Local pullback corridor", group = g3)
+bool showEvents = input.bool(true, "Event labels", group = g3)
+bool showPanel = input.bool(true, "Compact status", group = g3)
+color bull = input.color(#018208, "Up direction", group = g3)
+color bear = input.color(#D12208, "Down direction", group = g3)
+color waitColor = input.color(#7F49DE, "Pullback / mixed scales", group = g3)
+
+type Clock
+    int direction = 0
+    float extreme = na
+    float threshold = na
+
+method advance(Clock this, float p, float seed) =>
+    bool changed = false
+    if na(this.extreme)
+        this.extreme := p
+        this.threshold := seed
+    else if this.direction == 0
+        if math.abs(p - this.extreme) >= this.threshold
+            this.direction := p > this.extreme ? 1 : -1
+            this.extreme := p
+            this.threshold := seed
+            changed := true
+    else if this.direction == 1
+        if p > this.extreme
+            this.extreme := p
+        else if this.extreme - p >= this.threshold
+            this.direction := -1
+            this.extreme := p
+            this.threshold := seed
+            changed := true
+    else
+        if p < this.extreme
+            this.extreme := p
+        else if p - this.extreme >= this.threshold
+            this.direction := 1
+            this.extreme := p
+            this.threshold := seed
+            changed := true
+    changed
+
+f_rank(array<float> xs, float x) =>
+    float rank = na
+    int n = array.size(xs)
+    if n > 0
+        float count = 0.0
+        for v in xs
+            count += v < x ? 1.0 : v == x ? 0.5 : 0.0
+        rank := 100.0 * count / n
+    rank
+
+f_quantile(array<float> xs, float q) =>
+    float value = na
+    if array.size(xs) > 0
+        array<float> ordered = array.copy(xs)
+        array.sort(ordered)
+        value := array.percentile_linear_interpolation(ordered, q)
+    value
+
+var Clock micro = Clock.new()
+var Clock structure = Clock.new()
+var Clock broad = Clock.new()
+var array<float> depthHistory = array.new_float()
+var array<float> pathHistory = array.new_float()
+var array<float> depthRef = array.new_float()
+var array<float> pathRef = array.new_float()
+var bool active = false
+var bool warned = false
+var float anchor = na
+var float excursionScale = na
+var float maxDepth = 0.0
+var float path = 0.0
+var float depthRank = na
+var float pathRank = na
+var float corridorDepth = na
+var int recoveredCount = 0
+var int failedCount = 0
+bool shiftUp = false
+bool shiftDown = false
+bool resumeUp = false
+bool resumeDown = false
+bool stressEvent = false
+float priorAtr = ta.atr(atrLen)[1]
+bool valid = close > 0 and close[1] > 0 and not na(priorAtr) and priorAtr > 0
+float p = close > 0 ? math.log(close) : na
+float seed = valid ? math.max(math.log(1.0 + structureK * priorAtr / close[1]), 0.000001) : na
+
+if barstate.isconfirmed and valid
+    int previousDirection = structure.direction
+    bool microChange = micro.advance(p, seed * microRatio)
+    bool structureChange = structure.advance(p, seed)
+    bool broadChange = broad.advance(p, seed * broadRatio)
+    shiftUp := structureChange and structure.direction == 1
+    shiftDown := structureChange and structure.direction == -1
+
+    if active
+        float depthNow = math.max(0.0, previousDirection * (anchor - p) / excursionScale)
+        maxDepth := math.max(maxDepth, depthNow)
+        path += math.abs(p - math.log(close[1])) / excursionScale
+        bool enough = array.size(depthRef) >= minSamples
+        depthRank := enough ? f_rank(depthRef, maxDepth) : na
+        pathRank := enough ? f_rank(pathRef, path) : na
+        bool stressed = enough and (depthRank >= 80 or (depthRank >= 50 and pathRank >= 90))
+        bool recovered = previousDirection * (p - anchor) >= 0
+        if structureChange or recovered
+            array.push(depthHistory, maxDepth)
+            array.push(pathHistory, path)
+            if array.size(depthHistory) > memory
+                array.shift(depthHistory)
+                array.shift(pathHistory)
+            if structureChange
+                failedCount += 1
+            else
+                recoveredCount += 1
+                resumeUp := previousDirection == 1
+                resumeDown := previousDirection == -1
+            active := false
+            warned := false
+        else if stressed and not warned
+            stressEvent := true
+            warned := true
+
+    if not active and not structureChange and structure.direction != 0
+        float retracement = structure.direction * (structure.extreme - p) / structure.threshold
+        if retracement >= 0.20
+            active := true
+            warned := false
+            anchor := structure.extreme
+            excursionScale := structure.threshold
+            maxDepth := retracement
+            path := math.abs(p - math.log(close[1])) / excursionScale
+            depthRef := array.copy(depthHistory)
+            pathRef := array.copy(pathHistory)
+            bool enough = array.size(depthRef) >= minSamples
+            corridorDepth := enough ? math.min(0.90, math.max(0.20, f_quantile(depthRef, 70))) : na
+            depthRank := enough ? f_rank(depthRef, maxDepth) : na
+            pathRank := enough ? f_rank(pathRef, path) : na
+            if enough and (depthRank >= 80 or (depthRank >= 50 and pathRank >= 90))
+                stressEvent := true
+                warned := true
+
+bool initialized = structure.direction != 0
+bool aligned = initialized and broad.direction == structure.direction
+bool allAligned = aligned and micro.direction == structure.direction
+color directionColor = structure.direction == 1 ? bull : bear
+color candleColor = not initialized ? color.gray : active or not aligned ? waitColor : allAligned ? (structure.direction == 1 ? #2ABF24 : #F31623) : directionColor
+barcolor(paintBars ? candleColor : na, title = "Confirmed anatomy")
+float boundary = initialized ? math.exp(structure.extreme - structure.direction * structure.threshold) : na
+float inner = active and not na(corridorDepth) ? math.exp(anchor - structure.direction * excursionScale * corridorDepth) : na
+float outer = active and not na(corridorDepth) ? math.exp(anchor - structure.direction * excursionScale) : na
+plot(showBoundary and not (shiftUp or shiftDown) ? boundary : na, "Structure boundary", color = color.new(directionColor, 10), linewidth = 2, style = plot.style_linebr)
+pi = plot(showCorridor ? inner : na, "Historical pullback depth", color = color.new(waitColor, 45), style = plot.style_linebr)
+po = plot(showCorridor ? outer : na, "Pullback structure edge", color = color.new(waitColor, 70), style = plot.style_linebr)
+fill(pi, po, color = color.new(waitColor, 88), title = "Local pullback corridor", fillgaps = false)
+float gap = nz(priorAtr, high - low) * 1.05
+if showEvents and shiftUp
+    label.new(bar_index, low - gap, "Trend", style = label.style_label_up, color = bull, textcolor = color.white, size = size.small)
+if showEvents and shiftDown
+    label.new(bar_index, high + gap, "Trend", style = label.style_label_down, color = bear, textcolor = color.white, size = size.small)
+if showEvents and resumeUp
+    label.new(bar_index, low - gap, "Resume", style = label.style_label_up, color = bull, textcolor = color.white, size = size.tiny)
+if showEvents and resumeDown
+    label.new(bar_index, high + gap, "Resume", style = label.style_label_down, color = bear, textcolor = color.white, size = size.tiny)
+if showEvents and stressEvent
+    label.new(bar_index, structure.direction == 1 ? high + gap : low - gap, "Stress", style = structure.direction == 1 ? label.style_label_down : label.style_label_up, color = waitColor, textcolor = color.white, size = size.tiny)
+
+var table dashboard = table.new(position.top_right, 2, 3, border_width = 0)
+if barstate.islast and showPanel
+    string state = not initialized ? "Building structure" : active ? (warned ? "Unusual pullback" : "Pullback") : aligned ? "Trend extending" : "Mixed scales"
+    string ranks = active and not na(depthRank) ? str.tostring(depthRank, "0") + " / " + str.tostring(pathRank, "0") : "-- / --"
+    int n = active ? array.size(depthRef) : array.size(depthHistory)
+    color bg = color.new(chart.bg_color, 12)
+    table.cell(dashboard, 0, 0, structure.direction == 1 ? "Harmony Algo | harmonyalgo.com — UP" : structure.direction == -1 ? "Harmony Algo | harmonyalgo.com — DOWN" : "Harmony Algo | harmonyalgo.com", text_color = chart.fg_color, bgcolor = bg, text_size = size.small)
+    table.cell(dashboard, 1, 0, state, text_color = candleColor, bgcolor = bg, text_size = size.small)
+    table.cell(dashboard, 0, 1, "Depth / path rank", text_color = chart.fg_color, bgcolor = bg, text_size = size.tiny)
+    table.cell(dashboard, 1, 1, ranks, text_color = chart.fg_color, bgcolor = bg, text_size = size.tiny)
+    table.cell(dashboard, 0, 2, "Completed reference", text_color = chart.fg_color, bgcolor = bg, text_size = size.tiny)
+    table.cell(dashboard, 1, 2, str.tostring(n) + (n < minSamples ? " | learning" : " | not odds"), text_color = chart.fg_color, bgcolor = bg, text_size = size.tiny)
+
+plot(active ? depthRank : na, "Depth historical rank", display = display.data_window)
+plot(active ? pathRank : na, "Path historical rank", display = display.data_window)
+plot(array.size(depthHistory), "Completed excursions", display = display.data_window)
+plot(recoveredCount, "Recovered excursions (not trades)", display = display.data_window)
+plot(failedCount, "Structure-flip excursions (not trades)", display = display.data_window)
+alertcondition(shiftUp, "Up structure confirmed", "Up structure confirmed on {{ticker}} {{interval}} at {{close}}.")
+alertcondition(shiftDown, "Down structure confirmed", "Down structure confirmed on {{ticker}} {{interval}} at {{close}}.")
+alertcondition(resumeUp, "Up pullback recovered", "Up pullback anchor recovered on {{ticker}} {{interval}} at {{close}}.")
+alertcondition(resumeDown, "Down pullback recovered", "Down pullback anchor recovered on {{ticker}} {{interval}} at {{close}}.")
+alertcondition(stressEvent, "Unusual pullback", "Historically unusual pullback on {{ticker}} {{interval}} at {{close}}. Historical ranks are not reversal odds.")
+
+// Harmony Algo Community distribution — independent of calculations and alerts.
+var table communityBrand = table.new(position.middle_center, 1, 2)
+if barstate.islast
+    table.cell(communityBrand, 0, 0, "Harmony Algo | harmonyalgo.com", text_color = color.new(chart.fg_color, 20), text_size = size.normal, bgcolor = color.new(chart.bg_color, 88))
+    table.cell(communityBrand, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color = color.new(chart.fg_color, 20), text_size = size.small, bgcolor = color.new(chart.bg_color, 88))
