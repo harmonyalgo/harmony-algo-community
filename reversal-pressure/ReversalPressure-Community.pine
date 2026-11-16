@@ -1,0 +1,228 @@
+//@version=6
+// Harmony Algo | harmonyalgo.com — Reversal Pressure Community distribution.
+// Open source: branding can be edited; no removal-proof protection is claimed.
+// Causal descriptive reversal evidence; no probability, prediction or execution guarantee.
+indicator("Reversal Pressure Community [Harmony Algo]", shorttitle = "RevPress-C", overlay = true, behind_chart = false, max_bars_back = 5000, max_labels_count = 500, max_lines_count = 100)
+
+int locationLength = input.int(63, "Location window", minval = 31, maxval = 251, group = "Detection")
+float stretchGate = input.float(1.4, "Minimum robust extension", minval = 0.8, maxval = 3, step = 0.1, group = "Detection")
+float evidenceGate = input.float(1.2, "Recovery evidence / frozen ATR", minval = 0.6, maxval = 3, step = 0.1, group = "Detection")
+int setupLife = input.int(24, "Preparation expires after bars", minval = 8, maxval = 80, group = "Detection")
+int trackLife = input.int(48, "Reference tracking bars", minval = 12, maxval = 120, group = "Detection")
+int keepMaps = input.int(6, "Recent signal reference pairs", minval = 1, maxval = 30, group = "Display")
+bool showPreparation = input.bool(true, "Show preparation ribbons", group = "Display")
+bool showPanel = input.bool(true, "Show status panel", group = "Display")
+string corner = input.string("Top right", "Panel corner", options = ["Top right", "Bottom right", "Top left", "Bottom left"], group = "Display")
+color buyColor = input.color(#018208, "Buy", group = "Display")
+color sellColor = input.color(#D12208, "Sell", group = "Display")
+
+if barstate.isfirst and (not chart.is_standard or not (timeframe.isintraday or timeframe.isdaily or timeframe.isweekly or timeframe.ismonthly))
+    runtime.error("Use standard time-based candles. Synthetic price charts are not supported.")
+
+// All setup reference statistics exclude the current bar. IQR scaling is descriptive.
+float priorMedian = ta.percentile_linear_interpolation(close[1], locationLength, 50)
+float priorQ25 = ta.percentile_linear_interpolation(close[1], locationLength, 25)
+float priorQ75 = ta.percentile_linear_interpolation(close[1], locationLength, 75)
+float priorAtr = ta.atr(21)[1]
+float robustScale = math.max((priorQ75 - priorQ25) / 1.349, math.max(priorAtr, syminfo.mintick))
+float stretch = (close - priorMedian) / robustScale
+float path = math.sum(math.abs(ta.change(close)), 20)[1]
+float efficiency = path > 0 ? math.abs(close[1] - close[21]) / path : 0
+float rsi = ta.rsi(close, 14)
+bool stretchUp = ta.crossover(stretch, -stretchGate)
+bool stretchDown = ta.crossunder(stretch, stretchGate)
+bool rsiUp = ta.crossover(rsi, 30)
+bool rsiDown = ta.crossunder(rsi, 70)
+bool ready = not na(stretch) and not na(priorAtr) and priorAtr > syminfo.mintick and not na(close[21])
+
+var int phase = 0
+var int side = 0
+var int started = na
+var int triggered = na
+var int ended = na
+var float center = na
+var float unit = na
+var float extreme = na
+var float evidence = 0
+var float required = na
+var float invalidation = na
+var bool fatigue = false
+var bool trendGuard = false
+var bool longLocked = false
+var bool shortLocked = false
+var float lastLongExtreme = na
+var float lastShortExtreme = na
+var array<label> labels = array.new_label()
+var array<line> rails = array.new_line()
+var line centerRail = na
+var line stopRail = na
+
+f_label(float y, string caption, color shade, string style, string labelSize) =>
+    if array.size(labels) >= 500
+        label.delete(array.shift(labels))
+    array.push(labels, label.new(bar_index, y, caption, color = shade, textcolor = color.white, style = style, size = labelSize))
+
+int armEvent = 0
+int signalEvent = 0
+int endEvent = 0
+int stretchEvent = 0
+int rsiEvent = 0
+
+if barstate.isconfirmed and ready
+    stretchEvent := stretchUp ? 1 : stretchDown ? -1 : 0
+    rsiEvent := rsiUp ? 1 : rsiDown ? -1 : 0
+    // Returning toward the current center or a materially new leg rearms that side.
+    if stretch > -0.5 or (not na(lastLongExtreme) and low < lastLongExtreme - 2 * priorAtr)
+        longLocked := false
+    if stretch < 0.5 or (not na(lastShortExtreme) and high > lastShortExtreme + 2 * priorAtr)
+        shortLocked := false
+    int oldPhase = phase
+    if oldPhase == 2
+        line.set_x2(centerRail, bar_index)
+        line.set_x2(stopRail, bar_index)
+        bool failed = side * (close - invalidation) <= 0
+        bool recovered = side * (close - center) >= 0
+        bool stale = bar_index - triggered >= trackLife
+        if failed or recovered or stale
+            endEvent := failed ? -1 : recovered ? 1 : 2
+            phase := 0
+            side := 0
+            ended := bar_index
+    else if oldPhase == 1
+        bool newExtreme = side == 1 ? low < extreme : high > extreme
+        if newExtreme
+            extreme := side == 1 ? low : high
+            evidence := 0
+            fatigue := false
+        else
+            evidence := math.max(0, evidence + side * (close - close[1]) / unit - 0.10)
+        if side == 1
+            lastLongExtreme := extreme
+        else
+            lastShortExtreme := extreme
+        float candleRange = high - low
+        float tail = side == 1 ? math.min(open, close) - low : high - math.max(open, close)
+        float favorableLocation = candleRange > 0 ? (side == 1 ? close - low : high - close) / candleRange : 0
+        bool rejection = candleRange >= 0.5 * unit and tail >= 0.4 * candleRange and favorableLocation >= 0.65
+        float earlierPush = side * (close[8] - close[4]) / (4 * unit)
+        float latestPush = side * (close[4] - close) / (4 * unit)
+        bool slowing = earlierPush >= 0.08 and latestPush < 0.6 * earlierPush
+        fatigue := fatigue or rejection or slowing
+        float rebound = side * (close - extreme) / unit
+        bool reclaim = side == 1 ? close > high[1] and close > open : close < low[1] and close < open
+        bool centerReached = side * (close - center) >= 0
+        bool expired = bar_index - started >= setupLife
+        if centerReached or expired
+            endEvent := centerReached ? 4 : 3
+            phase := 0
+            side := 0
+            ended := bar_index
+        else if not newExtreme and fatigue and evidence >= required and rebound >= 0.8 and rebound <= 2.8 and reclaim
+            signalEvent := side
+            phase := 2
+            triggered := bar_index
+            invalidation := extreme - side * 0.15 * unit
+            f_label(side == 1 ? low - 0.25 * unit : high + 0.25 * unit, side == 1 ? "Buy ▲" : "Sell ▼", side == 1 ? buyColor : sellColor, side == 1 ? label.style_label_up : label.style_label_down, size.small)
+            if array.size(rails) >= keepMaps * 2
+                line.delete(array.shift(rails))
+                line.delete(array.shift(rails))
+            centerRail := line.new(bar_index, center, bar_index + 1, center, color = color.new(color.white, 40), style = line.style_dotted)
+            stopRail := line.new(bar_index, invalidation, bar_index + 1, invalidation, color = color.new(side == 1 ? buyColor : sellColor, 20), style = line.style_dashed)
+            array.push(rails, centerRail)
+            array.push(rails, stopRail)
+    else if na(ended) or bar_index - ended > 6
+        int candidate = stretch <= -stretchGate and not longLocked ? 1 : stretch >= stretchGate and not shortLocked ? -1 : 0
+        if candidate != 0
+            side := candidate
+            phase := 1
+            started := bar_index
+            center := priorMedian
+            unit := priorAtr
+            extreme := side == 1 ? low : high
+            evidence := 0
+            fatigue := false
+            invalidation := na
+            trendGuard := efficiency >= 0.6 and side * (close[1] - close[21]) < 0
+            required := evidenceGate * (trendGuard ? 1.35 : 1.0)
+            armEvent := side
+            if side == 1
+                longLocked := true
+                lastLongExtreme := extreme
+            else
+                shortLocked := true
+                lastShortExtreme := extreme
+    // An expired or signalled setup stays locked until recentered or a fresh 2ATR leg.
+    if phase == 1
+        if side == 1
+            longLocked := true
+        else
+            shortLocked := true
+
+// Harmony Algo | harmonyalgo.com — preparation and chart presentation.
+// Preparation history is a causal series, not a box relocated to a later extreme.
+float preparationOuter = phase == 1 and showPreparation ? extreme : na
+float preparationInner = phase == 1 and showPreparation ? extreme + side * 0.25 * unit : na
+pOuter = plot(preparationOuter, "Preparation outer", color = color.new(side == 1 ? buyColor : sellColor, 30), style = plot.style_linebr, linewidth = 1, display = display.pane)
+pInner = plot(preparationInner, "Preparation inner", color = color.new(side == 1 ? buyColor : sellColor, 100), style = plot.style_linebr, display = display.pane)
+fill(pOuter, pInner, color = color.new(side == 1 ? buyColor : sellColor, 82), title = "Preparation ribbon", fillgaps = false)
+plotshape(showPreparation and armEvent == 1 ? low - 0.3 * priorAtr : na, "Buy preparation", shape.circle, location.absolute, color.new(buyColor, 20), size = size.tiny, display = display.pane)
+plotshape(showPreparation and armEvent == -1 ? high + 0.3 * priorAtr : na, "Sell preparation", shape.circle, location.absolute, color.new(sellColor, 20), size = size.tiny, display = display.pane)
+
+// Outcome symbols do not consume the separate 500 Buy/Sell label history.
+plotshape(endEvent == -1 ? close : na, "Closing invalidation marker", shape.xcross, location.absolute, color.gray, size = size.tiny, display = display.pane)
+plotshape(endEvent == 1 ? close : na, "Center reached marker", shape.circle, location.absolute, color.new(color.silver, 40), size = size.tiny, display = display.pane)
+plotshape(endEvent == 2 ? close : na, "Tracking expiry marker", shape.cross, location.absolute, color.new(color.gray, 50), size = size.tiny, display = display.pane)
+
+// Harmony Algo | harmonyalgo.com — unchanged diagnostics and alert logic.
+// Explicit diagnostics enable independent closed-bar parity checks and causal event studies.
+plot(phase, "Phase: 0 idle, 1 preparation, 2 tracking", display = display.data_window)
+plot(side, "Direction: 1 buy, -1 sell", display = display.data_window)
+plot(stretch, "Robust extension", display = display.data_window)
+plot(center, "Frozen center", display = display.data_window)
+plot(unit, "Frozen ATR", display = display.data_window)
+plot(extreme, "Preparation extreme", display = display.data_window)
+plot(evidence, "Recovery evidence", display = display.data_window)
+plot(required, "Required evidence", display = display.data_window)
+plot(fatigue ? 1 : 0, "Fatigue observed", display = display.data_window)
+plot(invalidation, "Frozen invalidation", display = display.data_window)
+plot(armEvent, "Preparation event", display = display.data_window)
+plot(signalEvent, "Signal event", display = display.data_window)
+plot(endEvent, "End: -1 invalidation, 1 center, 2 tracking expiry, 3 setup expiry, 4 setup center", display = display.data_window)
+plot(efficiency, "Prior path efficiency", display = display.data_window)
+plot(stretchEvent, "Simple extension recross benchmark", display = display.data_window)
+plot(rsiEvent, "RSI 30/70 recross benchmark", display = display.data_window)
+plot(priorAtr, "Prior ATR21", display = display.data_window)
+plot(priorMedian, "Prior median", display = display.data_window)
+plot(robustScale, "Prior robust scale", display = display.data_window)
+
+alertcondition(signalEvent == 1, "Buy reversal", "Reversal Pressure: confirmed Buy on {{ticker}} {{interval}} at {{close}}. Closing-price evidence, not a guaranteed reversal.")
+alertcondition(signalEvent == -1, "Sell reversal", "Reversal Pressure: confirmed Sell on {{ticker}} {{interval}} at {{close}}. Closing-price evidence, not a guaranteed reversal.")
+alertcondition(armEvent != 0, "Reversal preparation", "Reversal Pressure: preparation on {{ticker}} {{interval}}. Preparation is not a Buy/Sell signal.")
+alertcondition(endEvent == -1, "Closing invalidation", "Reversal Pressure: reference invalidated on closing price for {{ticker}} {{interval}}. This is not a broker stop order.")
+
+string panelPosition = corner == "Top right" ? position.top_right : corner == "Bottom right" ? position.bottom_right : corner == "Top left" ? position.top_left : position.bottom_left
+var table panel = table.new(panelPosition, 2, 6, bgcolor = color.new(#151923, 8), frame_color = color.new(color.gray, 65), frame_width = 1)
+if barstate.islast
+    if showPanel
+        table.cell(panel, 0, 0, "Harmony Algo", text_color = color.white, text_size = size.small)
+        table.cell(panel, 1, 0, "harmonyalgo.com", text_color = color.silver, text_size = size.small)
+        string state = not ready ? "Warming up" : phase == 1 ? side == 1 ? "Buy preparation" : "Sell preparation" : phase == 2 ? side == 1 ? "Buy confirmed" : "Sell confirmed" : "Waiting for extension"
+        color stateColor = phase == 0 ? color.silver : side == 1 ? #42C454 : #F06455
+        table.cell(panel, 0, 1, "Reversal Pressure", text_color = color.white, text_size = size.small)
+        table.cell(panel, 1, 1, state, text_color = stateColor, text_size = size.small)
+        table.cell(panel, 0, 2, "Recovery evidence", text_color = color.silver, text_size = size.small)
+        table.cell(panel, 1, 2, phase == 0 ? "—" : str.tostring(evidence, "#.00") + " / " + str.tostring(required, "#.00") + " ATR", text_color = color.white, text_size = size.small)
+        table.cell(panel, 0, 3, "Fatigue / trend guard", text_color = color.silver, text_size = size.small)
+        table.cell(panel, 1, 3, phase == 0 ? "—" : (fatigue ? "Observed" : "Waiting") + " / " + (trendGuard ? "Stricter" : "Normal"), text_color = color.white, text_size = size.small)
+        table.cell(panel, 0, 4, "Closing invalidation", text_color = color.silver, text_size = size.small)
+        table.cell(panel, 1, 4, phase == 2 ? str.tostring(invalidation, format.mintick) : "After confirmation", text_color = color.white, text_size = size.small)
+        table.cell(panel, 0, 5, "Closed-bar signals", text_color = color.silver, text_size = size.small)
+        table.cell(panel, 1, 5, "Evidence ≠ probability", text_color = color.silver, text_size = size.small)
+    else
+        table.clear(panel, 0, 0, 1, 5)
+
+// Harmony Algo | harmonyalgo.com — permanent distribution branding; independent of calculations.
+var table communityBrand = table.new(position.middle_center, 1, 2)
+if barstate.islast
+    table.cell(communityBrand, 0, 0, "Harmony Algo", text_color = color.new(color.silver, 48), text_size = size.large, bgcolor = color.new(color.black, 100))
+    table.cell(communityBrand, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color = color.new(color.silver, 28), text_size = size.small, bgcolor = color.new(color.black, 100))
