@@ -1,0 +1,150 @@
+//@version=6
+// Trend Stress Compass Community — Harmony Algo | harmonyalgo.com
+// Original block-deletion slope sensitivity analysis. Branding is editable source, not copy protection.
+// Copyright (c) 2026 Harmony Algo. Licensed under the Mozilla Public License 2.0.
+indicator("Trend Stress Compass Community [Harmony Algo]", shorttitle="T Stress Community", overlay=true, max_bars_back=300, max_labels_count=500, behind_chart=false)
+
+int block = input.int(12, "Bars per segment", minval=4, maxval=40, group="Stress model", tooltip="Six contiguous segments. A segment is omitted from each refit, keeping original time coordinates.")
+float entry = input.float(1.5, "Minimum retained move / prior ATR", minval=0.5, step=0.1, group="Stress model")
+float release = input.float(0.6, "Loss-of-support threshold / prior ATR", minval=0.0, maxval=0.9, step=0.1, group="Stress model")
+int persist = input.int(3, "Confirmed closes", minval=1, maxval=8, group="Stress model")
+bool panel = input.bool(true, "Show summary", group="Display")
+int keep = input.int(500, "Retained direction labels", minval=20, maxval=500, group="Display")
+
+if barstate.isfirst and (not chart.is_standard or release >= entry)
+    runtime.error("Use standard time-based candles and set loss threshold below entry threshold.")
+
+int n = block * 6
+float unit = ta.atr(21)[1]
+var float fitted = na
+var float lower = na
+var float upper = na
+var float usedATR = na
+var float fullMove = na
+var float minMove = na
+var float maxMove = na
+var int direction = 0
+var int upRun = 0
+var int downRun = 0
+var int lossRun = 0
+var bool ready = false
+var array<label> tags = array.new<label>()
+bool upEvent = false
+bool downEvent = false
+bool lossEvent = false
+
+// Harmony Algo | harmonyalgo.com — unchanged confirmed-bar model.
+// Sufficient statistics with a local price origin limit cancellation.
+if barstate.isconfirmed
+    ready := bar_index >= n - 1 and not na(unit) and unit > 0 and not na(close[n - 1])
+    if ready
+        usedATR := unit
+        float origin = close[n - 1]
+        float sx = n * (n - 1.0) / 2.0
+        float sxx = n * (n - 1.0) * (2.0 * n - 1.0) / 6.0
+        float sy = 0.0
+        float sxy = 0.0
+        array<float> blockY = array.new_float(6, 0.0)
+        array<float> bxy = array.new_float(6, 0.0)
+        for x = 0 to n - 1
+            float y = close[n - 1 - x] - origin
+            int b = int(x / block)
+            sy += y
+            sxy += x * y
+            array.set(blockY, b, array.get(blockY, b) + y)
+            array.set(bxy, b, array.get(bxy, b) + x * y)
+        float slope = (sxy - sx * sy / n) / (sxx - sx * sx / n)
+        fitted := origin + sy / n + slope * (n - 1 - sx / n)
+        fullMove := slope * (n - 1) / unit
+        lower := fitted
+        upper := fitted
+        minMove := na
+        maxMove := na
+        for b = 0 to 5
+            float a = b * block
+            float z = a + block - 1
+            float bx = block * (a + z) / 2.0
+            float bx2 = z * (z + 1) * (2 * z + 1) / 6.0 - (a - 1) * a * (2 * a - 1) / 6.0
+            float m = n - block
+            float rx = sx - bx
+            float ry = sy - array.get(blockY, b)
+            float rxy = sxy - array.get(bxy, b)
+            float rs = (rxy - rx * ry / m) / (sxx - bx2 - rx * rx / m)
+            float endpoint = origin + ry / m + rs * (n - 1 - rx / m)
+            float move = rs * (n - 1) / unit
+            lower := math.min(lower, endpoint)
+            upper := math.max(upper, endpoint)
+            minMove := na(minMove) ? move : math.min(minMove, move)
+            maxMove := na(maxMove) ? move : math.max(maxMove, move)
+        bool up = fullMove >= 2.0 and minMove >= entry
+        bool down = fullMove <= -2.0 and maxMove <= -entry
+        upRun := up ? upRun + 1 : 0
+        downRun := down ? downRun + 1 : 0
+        bool losing = direction == 1 ? minMove <= release : direction == -1 ? maxMove >= -release : false
+        lossRun := losing ? lossRun + 1 : 0
+        if upRun >= persist and direction != 1
+            direction := 1
+            upEvent := true
+            lossRun := 0
+        else if downRun >= persist and direction != -1
+            direction := -1
+            downEvent := true
+            lossRun := 0
+        else if lossRun >= persist and direction != 0
+            direction := 0
+            lossEvent := true
+            lossRun := 0
+    else
+        usedATR := na
+        direction := 0
+        upRun := 0
+        downRun := 0
+        lossRun := 0
+        fitted := na
+        lower := na
+        upper := na
+        fullMove := na
+        minMove := na
+        maxMove := na
+
+color ink = direction == 1 ? #018208 : direction == -1 ? #D12208 : #7F49DE
+p = plot(fitted, "Full-fit endpoint", color=ink, linewidth=2)
+lo = plot(lower, "Deletion endpoint low", color=color.new(ink, 65))
+hi = plot(upper, "Deletion endpoint high", color=color.new(ink, 65))
+fill(lo, hi, color=color.new(ink, 89), title="Fit sensitivity (not a forecast band)")
+if upEvent or downEvent
+    while array.size(tags) >= keep
+        label.delete(array.shift(tags))
+    label t = label.new(bar_index, upEvent ? low : high, upEvent ? "Up" : "Down", yloc=upEvent ? yloc.belowbar : yloc.abovebar, style=upEvent ? label.style_label_up : label.style_label_down, color=ink, textcolor=color.white, size=size.small)
+    array.push(tags, t)
+plotshape(lossEvent, title="Support lost", style=shape.circle, location=location.belowbar, color=#7F49DE, size=size.tiny)
+
+// Expose confirmed diagnostics for the data window and independent validation.
+plot(usedATR, "Prior ATR used", display=display.data_window)
+plot(fullMove, "Full move / prior ATR", display=display.data_window)
+plot(minMove, "Minimum deletion move / prior ATR", display=display.data_window)
+plot(maxMove, "Maximum deletion move / prior ATR", display=display.data_window)
+plot(direction, "Confirmed state", display=display.data_window)
+plot(upEvent ? 1 : downEvent ? -1 : lossEvent ? 2 : 0, "Confirmed event", display=display.data_window)
+
+var table summary = table.new(position.top_right, 2, 4, bgcolor=color.new(#101820, 10), border_width=0)
+if barstate.islast and panel
+    table.cell(summary, 0, 0, "Harmony Algo", text_color=color.white, text_size=size.small)
+    table.cell(summary, 1, 0, "harmonyalgo.com", text_color=color.white, text_size=size.small)
+    table.cell(summary, 0, 1, "TREND STRESS", text_color=color.white, text_size=size.small)
+    table.cell(summary, 1, 1, not ready ? "Warming up" : direction == 1 ? "Up supported" : direction == -1 ? "Down supported" : "Mixed / influenced", text_color=color.white, text_size=size.small)
+    table.cell(summary, 0, 2, "Full fitted move", text_color=color.white, text_size=size.small)
+    table.cell(summary, 1, 2, str.tostring(fullMove, "#.00") + " ATR", text_color=color.white, text_size=size.small)
+    table.cell(summary, 0, 3, "Weakest retained move", text_color=color.white, text_size=size.small)
+    float weakest = fullMove >= 0 ? minMove : -maxMove
+    table.cell(summary, 1, 3, str.tostring(weakest, "#.00") + " ATR", text_color=color.white, text_size=size.small)
+
+alertcondition(upEvent, "Up support confirmed", "Trend Stress: Up support confirmed on {{ticker}} {{interval}} at {{close}}.")
+alertcondition(downEvent, "Down support confirmed", "Trend Stress: Down support confirmed on {{ticker}} {{interval}} at {{close}}.")
+alertcondition(lossEvent, "Directional support lost", "Trend Stress: Directional support lost on {{ticker}} {{interval}} at {{close}}.")
+
+// Harmony Algo | harmonyalgo.com — persistent Community branding only.
+var table communityBrand = table.new(position.middle_center, 1, 2, bgcolor=color.new(color.black, 100))
+if barstate.islast
+    table.cell(communityBrand, 0, 0, "Harmony Algo", text_color=color.new(color.silver, 30), text_size=size.large)
+    table.cell(communityBrand, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color=color.new(color.silver, 25), text_size=size.small)
