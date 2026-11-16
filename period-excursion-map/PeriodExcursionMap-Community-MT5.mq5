@@ -78,7 +78,7 @@ void Push(double &v[],double value,int limit){int n=ArraySize(v);ArrayResize(v,n
 double Rank(double &v[],double value){int n=ArraySize(v);if(!n)return EMPTY_VALUE;double k=0;for(int j=0;j<n;j++)k+=v[j]<value?1:v[j]==value?0.5:0;return 100*k/n;}
 void OnChartEvent(const int id,const long &l,const double &d,const string &s){if(id==CHARTEVENT_CHART_CHANGE)Brand();}
 void OnDeinit(const int reason){ObjectsDeleteAll(0,prefix);}
-int OnInit(){if(PeriodSeconds(_Period)>=PeriodSeconds((ENUM_TIMEFRAMES)ReferencePeriod)||CompletedPeriodsInMemory<20||CompletedPeriodsInMemory>250||ReferenceATRLength<5||ReferenceATRLength>100||OuterPercentile<60||OuterPercentile>95)return INIT_PARAMETERS_INCORRECT;SetIndexBuffer(0,B0,INDICATOR_DATA);
+int OnInit(){if(CompletedPeriodsInMemory<20||CompletedPeriodsInMemory>250||ReferenceATRLength<5||ReferenceATRLength>100||OuterPercentile<60||OuterPercentile>95)return INIT_PARAMETERS_INCORRECT;SetIndexBuffer(0,B0,INDICATOR_DATA);
 SetIndexBuffer(1,B1,INDICATOR_DATA);
 SetIndexBuffer(2,B2,INDICATOR_DATA);
 SetIndexBuffer(3,B3,INDICATOR_DATA);
@@ -119,6 +119,14 @@ PlotIndexSetInteger(7,PLOT_DRAW_TYPE,DRAW_ARROW);PlotIndexSetString(7,PLOT_LABEL
 PlotIndexSetInteger(8,PLOT_DRAW_TYPE,DRAW_ARROW);PlotIndexSetString(8,PLOT_LABEL,"Down outer event");PlotIndexSetInteger(8,PLOT_LINE_COLOR,C'209,34,8');PlotIndexSetInteger(8,PLOT_ARROW,234);IndicatorSetString(INDICATOR_SHORTNAME,"Period Excursion Map Community [Harmony Algo]");IndicatorSetInteger(INDICATOR_DIGITS,_Digits);prefix="PeriodExcursionMap_"+IntegerToString(ChartID())+"_"+IntegerToString((long)GetMicrosecondCount())+"_";Brand();return INIT_SUCCEEDED;}int OnCalculate(const int total,const int previous,const datetime &time[],const double &open[],const double &high[],const double &low[],const double &close[],const long &tick_volume[],const long &volume[],const int &spread[])
 {
  ArraySetAsSeries(time,false);ArraySetAsSeries(open,false);ArraySetAsSeries(high,false);ArraySetAsSeries(low,false);ArraySetAsSeries(close,false);
+ if(PeriodSeconds(_Period)>=PeriodSeconds((ENUM_TIMEFRAMES)ReferencePeriod))
+ {
+  // Unsupported chart: remain attached and explain, with no levels or events.
+  // Same behavior in charts and the tester; no tester-detection branches.
+  if(previous!=total){ArrayInitialize(B0,EMPTY_VALUE);ArrayInitialize(B1,EMPTY_VALUE);ArrayInitialize(B2,EMPTY_VALUE);ArrayInitialize(B3,EMPTY_VALUE);ArrayInitialize(B4,EMPTY_VALUE);ArrayInitialize(B5,EMPTY_VALUE);ArrayInitialize(B6,EMPTY_VALUE);ArrayInitialize(B7,EMPTY_VALUE);ArrayInitialize(B8,EMPTY_VALUE);ArrayInitialize(B9,EMPTY_VALUE);ArrayInitialize(B10,EMPTY_VALUE);ArrayInitialize(B11,EMPTY_VALUE);ArrayInitialize(B12,EMPTY_VALUE);ArrayInitialize(B13,EMPTY_VALUE);ArrayInitialize(B14,EMPTY_VALUE);ArrayInitialize(B15,0);}
+  Text("timeframe_notice","Inactive: select a chart timeframe below "+EnumToString((ENUM_TIMEFRAMES)ReferencePeriod),12,78);
+  Brand();return total;
+ }
  if(total<2)return 0;if(previous==total && lastOpen==time[total-1])return total;
  bool notify=previous>0 && lastOpen>0 && time[total-1]>lastOpen;lastOpen=time[total-1];
  ObjectsDeleteAll(0,prefix);ArrayResize(marks,0);ArrayResize(maps,0);

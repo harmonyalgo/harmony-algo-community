@@ -49,3 +49,12 @@ Period Excursion checks cover default daily map order, freezing and first closin
 The current unclosed bar has no committed event. Local popup delivery on new live ticks, profitability, full parameter sweeps, mobile layout and exact cross-feed TradingView equality are not verified.
 All closed-bar indicators can recalculate if source history or parameters change.
 CodeBase is a separate ad-free derivative. Its publication status is recorded separately; no draft URL is an official product link.
+
+## MT5 validation fix — 16 November 2026
+
+On a chart period equal to or higher than the reference period, MT5 now remains attached in an explicit inactive state with a lower-timeframe notice, empty levels and zero events. It does not silently change the reference period. Supported-timeframe calculations and inputs are unchanged.
+
+The updated native model matched all original exported fields on EURUSD/GBPUSD H1/H4 loaded sample history (12 cuts across the three tools). Stress/Reversal also passed native MQL5 growing-history and explicit-reset comparisons across 1,499 successive calls per tool. The calculation tests suppress graphics; actual indicator charts were tested separately. Period additionally passed native daily-chart attachment with empty levels and zero events. CodeBase server validation is separate and still pending.
+
+New MT5 MQ5 SHA256: 11b0c59e71cb21acbb8fd1c641e9286fc50585865e949b4312dc0c7aff210581
+New EX5 SHA256: b38019716218633679141e558f5c263572b6077c719db32b57802478de86f796
