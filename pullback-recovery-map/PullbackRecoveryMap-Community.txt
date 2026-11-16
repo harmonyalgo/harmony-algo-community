@@ -1,0 +1,219 @@
+//@version=6
+// Pullback Recovery Map Community — Harmony Algo | harmonyalgo.com
+// Copyright (c) 2026 Harmony Algo. Mozilla Public License 2.0.
+indicator("Pullback Recovery Map Community [Harmony Algo]", shorttitle="PR Map", overlay=true, max_bars_back=500, max_boxes_count=100, max_lines_count=100, max_labels_count=500)
+
+int block = input.int(12, "Bars per trend segment", minval=4, maxval=30, group="Trend context", tooltip="Eight prior segments; the decision candle is excluded.")
+float entry = input.float(2.5, "Trend entry / scale", minval=1.0, step=0.25, group="Trend context")
+float release = input.float(0.8, "Trend release / scale", minval=0.0, maxval=1.0, step=0.1, group="Trend context")
+float depth = input.float(0.5, "Pullback trigger / scale", minval=0.25, maxval=1.0, step=0.05, group="Pullback map")
+float limit = input.float(1.75, "Frozen guard distance / scale", minval=1.25, maxval=4.0, step=0.25, group="Pullback map")
+int lifetime = input.int(48, "Maximum tracking bars", minval=8, maxval=160, group="Pullback map")
+bool summary = input.bool(true, "Show summary", group="Display")
+int retain = input.int(80, "Retained maps", minval=10, maxval=90, group="Display")
+
+if barstate.isfirst and (not chart.is_standard or release >= entry or limit <= depth)
+    runtime.error("Use standard candles; release must be below entry and guard distance above trigger.")
+
+color bull = #018208
+color bear = #D12208
+color neutral = #7F49DE
+color ink = #D6D9E0
+int n = block * 8
+float priorATR = ta.atr(21)[1]
+var float baseline = na
+var float scale = na
+var float movement = na
+var int direction = 0
+var int upCount = 0
+var int downCount = 0
+var int lossCount = 0
+var int directionAt = 0
+var bool armed = false
+var bool watching = false
+var int side = 0
+var int began = 0
+var int ended = -10000
+var float anchor = na
+var float unit = na
+var float guard = na
+var float recovery = na
+var int badCount = 0
+var int goodCount = 0
+var box activeBox = na
+var line activeLine = na
+var array<box> maps = array.new<box>()
+var array<line> levels = array.new<line>()
+var array<label> tags = array.new<label>()
+bool watchEvent = false
+bool buyEvent = false
+bool sellEvent = false
+bool failEvent = false
+bool endEvent = false
+int eventCode = 0
+int eventSide = 0
+
+// Harmony Algo | harmonyalgo.com — approved closing calculations unchanged.
+if barstate.isconfirmed
+    bool valid = bar_index >= n and not na(priorATR) and priorATR > 0 and not na(close[n])
+    if valid
+        float origin = close[n]
+        array<float> means = array.new_float(8, 0.0)
+        for b = 0 to 7
+            float total = 0.0
+            for k = 0 to block - 1
+                total += close[n - (b * block + k)] - origin
+            array.set(means, b, total / block)
+        array<float> slopes = array.new_float()
+        for a = 0 to 6
+            for b = a + 1 to 7
+                array.push(slopes, (array.get(means, b) - array.get(means, a)) / ((b - a) * block))
+        float slope = array.median(slopes)
+        array<float> intercepts = array.new_float()
+        for b = 0 to 7
+            float x = b * block + (block - 1.0) / 2.0
+            array.push(intercepts, array.get(means, b) - slope * x)
+        float intercept = array.median(intercepts)
+        array<float> residuals = array.new_float()
+        for b = 0 to 7
+            float x = b * block + (block - 1.0) / 2.0
+            array.push(residuals, math.abs(array.get(means, b) - intercept - slope * x))
+        baseline := origin + intercept + slope * n
+        scale := math.max(priorATR, 1.4826 * array.median(residuals))
+        movement := slope * (n - 1) / scale
+        int oldDirection = direction
+        upCount := movement >= entry ? upCount + 1 : 0
+        downCount := movement <= -entry ? downCount + 1 : 0
+        lossCount := direction != 0 and direction * movement <= release ? lossCount + 1 : 0
+        if upCount >= 3
+            direction := 1
+        else if downCount >= 3
+            direction := -1
+        else if lossCount >= 3
+            direction := 0
+        if direction != oldDirection
+            directionAt := bar_index
+            armed := false
+            lossCount := 0
+        if watching
+            eventSide := side
+            badCount := side * (close - guard) < 0 ? badCount + 1 : 0
+            goodCount := side * (close - recovery) > 0 ? goodCount + 1 : 0
+            int age = bar_index - began
+            if badCount >= 2
+                failEvent := true
+                eventCode := 8
+            else if direction != side
+                endEvent := true
+                eventCode := 16
+            else if age >= 3 and goodCount >= 2
+                buyEvent := side == 1
+                sellEvent := side == -1
+                eventCode := side == 1 ? 2 : 4
+            else if age >= lifetime
+                endEvent := true
+                eventCode := 16
+            box.set_right(activeBox, bar_index)
+            line.set_x2(activeLine, bar_index)
+            if eventCode != 0
+                color result = failEvent ? color.gray : endEvent ? neutral : side == 1 ? bull : bear
+                box.set_border_color(activeBox, result)
+                box.set_bgcolor(activeBox, color.new(result, 92))
+                line.set_color(activeLine, color.new(result, 25))
+                watching := false
+                ended := bar_index
+                armed := false
+        else if direction != 0
+            float distance = direction * (close - baseline) / scale
+            if distance >= 0.5 and bar_index - ended > 12
+                armed := true
+            if armed and bar_index - directionAt >= 6 and bar_index - ended > 12 and distance <= -depth and distance >= -limit
+                watching := true
+                armed := false
+                side := direction
+                eventSide := side
+                began := bar_index
+                anchor := baseline
+                unit := scale
+                guard := anchor - side * limit * unit
+                recovery := side == 1 ? math.max(high, anchor + 0.15 * unit) : math.min(low, anchor - 0.15 * unit)
+                badCount := 0
+                goodCount := 0
+                watchEvent := true
+                eventCode := 1
+                color tint = side == 1 ? bull : bear
+                activeBox := box.new(bar_index, math.max(anchor, guard), bar_index, math.min(anchor, guard), border_color=color.new(tint, 35), bgcolor=color.new(tint, 91))
+                activeLine := line.new(bar_index, recovery, bar_index, recovery, color=tint, style=line.style_dashed)
+                array.push(maps, activeBox)
+                array.push(levels, activeLine)
+                if array.size(maps) > retain
+                    box.delete(array.shift(maps))
+                    line.delete(array.shift(levels))
+    else
+        direction := 0
+        upCount := 0
+        downCount := 0
+        lossCount := 0
+        armed := false
+        baseline := na
+        scale := na
+        movement := na
+        if watching
+            eventSide := side
+            endEvent := true
+            eventCode := 16
+            box.set_right(activeBox, bar_index)
+            line.set_x2(activeLine, bar_index)
+            watching := false
+            ended := bar_index
+
+    if eventCode != 0
+        bool favorable = buyEvent or sellEvent
+        string caption = watchEvent ? "Watch" : buyEvent ? "Buy ▲" : sellEvent ? "Sell ▼" : failEvent ? "Lost" : "End"
+        color tint = favorable ? (eventSide == 1 ? bull : bear) : watchEvent ? neutral : color.gray
+        float location = eventSide == 1 ? low - nz(scale, priorATR) * 0.3 : high + nz(scale, priorATR) * 0.3
+        label tag = label.new(bar_index, location, caption, style=eventSide == 1 ? label.style_label_up : label.style_label_down, color=tint, textcolor=color.white, size=size.small)
+        array.push(tags, tag)
+        if array.size(tags) > 400
+            label.delete(array.shift(tags))
+
+color trendColor = direction == 1 ? bull : direction == -1 ? bear : neutral
+plot(baseline, "Prior robust trend", color=color.new(trendColor, 20), linewidth=2)
+plot(watching ? guard : na, "Active frozen guard", color=color.new(trendColor, 30), style=plot.style_linebr, display=display.pane)
+plot(scale, "Model scale", display=display.data_window)
+plot(movement, "Trend move / scale", display=display.data_window)
+plot(direction, "Direction", display=display.data_window)
+plot(watching ? 1 : 0, "Watching", display=display.data_window)
+plot(anchor, "Frozen baseline", display=display.data_window)
+plot(unit, "Frozen scale", display=display.data_window)
+plot(guard, "Frozen guard", display=display.data_window)
+plot(recovery, "Frozen recovery", display=display.data_window)
+plot(eventCode, "Event code", display=display.data_window)
+plot(eventSide, "Event side", display=display.data_window)
+
+var table panel = table.new(position.top_right, 2, 5, bgcolor=color.new(#131722, 8), frame_color=color.new(neutral, 55), frame_width=1)
+if barstate.isfirst
+    table.merge_cells(panel, 0, 0, 1, 0)
+if barstate.islast and summary
+    table.cell(panel, 0, 0, "Harmony Algo | harmonyalgo.com", text_color=color.white, text_size=size.small)
+    table.cell(panel, 0, 1, "PULLBACK RECOVERY", text_color=ink, text_size=size.small)
+    table.cell(panel, 1, 1, direction == 1 ? "UP CONTEXT" : direction == -1 ? "DOWN CONTEXT" : "MIXED", text_color=trendColor, text_size=size.small)
+    table.cell(panel, 0, 2, "Map", text_color=ink, text_size=size.small)
+    table.cell(panel, 1, 2, watching ? "WATCHING" : "WAITING", text_color=watching ? color.orange : ink, text_size=size.small)
+    table.cell(panel, 0, 3, "Trend / scale", text_color=ink, text_size=size.small)
+    table.cell(panel, 1, 3, str.tostring(movement, "#.00"), text_color=ink, text_size=size.small)
+    table.cell(panel, 0, 4, "Closing confirmation", text_color=ink, text_size=size.small)
+    table.cell(panel, 1, 4, "Not a forecast", text_color=ink, text_size=size.small)
+
+// Harmony Algo | harmonyalgo.com — original alert timing retained.
+alertcondition(watchEvent, "Pullback watch", "Pullback Recovery: a frozen map was armed at close.")
+alertcondition(buyEvent, "Upward recovery", "Pullback Recovery: upward recovery confirmed at close.")
+alertcondition(sellEvent, "Downward recovery", "Pullback Recovery: downward recovery confirmed at close.")
+alertcondition(failEvent, "Frozen guard lost", "Pullback Recovery: frozen guard failed at close.")
+alertcondition(endEvent, "Map ended", "Pullback Recovery: map cancelled or expired at close.")
+
+// Permanent Community branding, independent of calculations and alerts.
+var table communityBrand = table.new(position.middle_center, 1, 2, bgcolor=color.new(color.black, 100))
+if barstate.islast
+    table.cell(communityBrand, 0, 0, "Harmony Algo | harmonyalgo.com", text_color=color.new(color.white, 35), text_size=size.normal)
+    table.cell(communityBrand, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color=color.new(color.white, 35), text_size=size.small)

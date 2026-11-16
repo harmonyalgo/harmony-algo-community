@@ -1,0 +1,10 @@
+Pullback Recovery Map — release verification, 16 November 2026
+Approved clean SHA256 a421fbaaf406e925e3857160a9e748dca76c3e28a2184b26862a86d8f65d5a7e
+Public TradingView https://www.tradingview.com/script/5vYbkMqc-Pullback-Recovery-Map-Harmony-Algo/
+Actual publication 2026-11-16T09:31:59Z, DOM event-time and profile datetime agree.
+Public open-source rendered code readback hash exactly matches approved source.
+Community Pine/TXT SHA256 5242a4ef3392aa1e33d1cbc2f8d2c5007f3707d0cb86242156237e4a638be5df
+Community saved PineID USER;0edeb97047df4485a624906ff8d58af1, revision1. Compiled ready status2. All400loaded rows,full plot/diagnostic/alert columns equal clean;zero differences. Screenshot genuine TradingView Community render.
+MT5 Community source: static structure/defaults/18buffer mappings/closed-bar review only. MetaEditor/MT5 and wine unavailable. NOT COMPILED;NOT TERMINAL TESTED;NO EX5;NO CROSS-FEED SIGNAL EQUALITY CLAIM. Separate clean CodeBase derivative prepared locally,not distributed as a public product without missing platform verification.
+Desktop TXT/MQ5 bytes verified equal release sources. No source-dependent marketing gating or watermark-hide input.
+Measurement once tasks +30m0d291783-acad-4944-ac8f-2448b4a7ac60; +24h26f01313-741b-4b2c-90d1-0de0f6770bdc;wait/run-once,+1second minute-rounding. No72h for this release.
