@@ -8,6 +8,13 @@ Open-source chart tools for **TradingView (Pine Script)** and **MetaTrader 5 (MQ
 
 - [Pullback Recovery Map](pullback-recovery-map/): robust trend context with frozen pullback, closing recovery and guard-failure maps. Community Pine/TXT are compiled and checked; MT5 source is explicitly uncompiled and untested.
 
+- [Trend Stress Compass](trend-stress-compass): Community Pine/TXT plus compiled and history-tested MT5 MQ5/EX5. See package validation scope.
+- [Reversal Pressure](reversal-pressure): Community Pine/TXT plus compiled and history-tested MT5 MQ5/EX5. See package validation scope.
+- [Intrinsic Trend Anatomy](intrinsic-trend-anatomy): Community Pine/TXT plus compiled and history-tested MT5 MQ5/EX5. See package validation scope.
+- [Price Rank Shift](price-rank-shift): Community Pine/TXT plus compiled and history-tested MT5 MQ5/EX5. See package validation scope.
+- [Target Race Map](target-race-map): Community Pine/TXT plus compiled and history-tested MT5 MQ5/EX5. See package validation scope.
+- [Period Excursion Map](period-excursion-map): Community Pine/TXT plus compiled and history-tested MT5 MQ5/EX5. See package validation scope.
+
 ## What each package contains
 
 - TradingView Community source in `.pine` and matching UTF-8 `.txt` format.
