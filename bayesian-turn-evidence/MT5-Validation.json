@@ -1,0 +1,82 @@
+[
+  {
+    "fixture": "branded-EURUSD-PERIOD_H1.csv",
+    "rows": 3975,
+    "closed_comparisons": 63584,
+    "max_absolute_error": 1.1359801987964602e-12,
+    "mismatches": [],
+    "open_state_held": true,
+    "source_sha256": "e9d13b5dc46a5e9e767eb8126271e7fd839cf067b653a3f3de97f831ce5600e4",
+    "fixture_sha256": "3754cec5c3b398c58b69f0a37bab8350cc0ad4e4d4e066b0f6372a49595ccd9f"
+  },
+  {
+    "fixture": "branded-EURUSD-PERIOD_H4.csv",
+    "rows": 996,
+    "closed_comparisons": 15920,
+    "max_absolute_error": 2.220446049250313e-13,
+    "mismatches": [],
+    "open_state_held": true,
+    "source_sha256": "e9d13b5dc46a5e9e767eb8126271e7fd839cf067b653a3f3de97f831ce5600e4",
+    "fixture_sha256": "805162203b78ee0b2c78337df7fe06ee00c22aede09cb3c7205f5fad163d053f"
+  },
+  {
+    "fixture": "branded-GBPUSD-PERIOD_H1.csv",
+    "rows": 3975,
+    "closed_comparisons": 63584,
+    "max_absolute_error": 1.6324719354088302e-12,
+    "mismatches": [],
+    "open_state_held": true,
+    "source_sha256": "e9d13b5dc46a5e9e767eb8126271e7fd839cf067b653a3f3de97f831ce5600e4",
+    "fixture_sha256": "2404cc6ce880aa56dc64bbd15559c24d211fae041f5a2d1aa0431af00e6829f3"
+  },
+  {
+    "fixture": "branded-GBPUSD-PERIOD_H4.csv",
+    "rows": 996,
+    "closed_comparisons": 15920,
+    "max_absolute_error": 4.53859172466764e-13,
+    "mismatches": [],
+    "open_state_held": true,
+    "source_sha256": "e9d13b5dc46a5e9e767eb8126271e7fd839cf067b653a3f3de97f831ce5600e4",
+    "fixture_sha256": "8054e337153b5663673465fb40cdcbb7bb1603a80a1ea3c66a4faac8cf877422"
+  },
+  {
+    "fixture": "clean-EURUSD-PERIOD_H1.csv",
+    "rows": 3975,
+    "closed_comparisons": 63584,
+    "max_absolute_error": 1.1359801987964602e-12,
+    "mismatches": [],
+    "open_state_held": true,
+    "source_sha256": "59c722efaf05e0e32d122314fba04bed5c71eac7e4247f0df896e4397fdf1a8c",
+    "fixture_sha256": "3754cec5c3b398c58b69f0a37bab8350cc0ad4e4d4e066b0f6372a49595ccd9f"
+  },
+  {
+    "fixture": "clean-EURUSD-PERIOD_H4.csv",
+    "rows": 996,
+    "closed_comparisons": 15920,
+    "max_absolute_error": 2.220446049250313e-13,
+    "mismatches": [],
+    "open_state_held": true,
+    "source_sha256": "59c722efaf05e0e32d122314fba04bed5c71eac7e4247f0df896e4397fdf1a8c",
+    "fixture_sha256": "805162203b78ee0b2c78337df7fe06ee00c22aede09cb3c7205f5fad163d053f"
+  },
+  {
+    "fixture": "clean-GBPUSD-PERIOD_H1.csv",
+    "rows": 3975,
+    "closed_comparisons": 63584,
+    "max_absolute_error": 1.6324719354088302e-12,
+    "mismatches": [],
+    "open_state_held": true,
+    "source_sha256": "59c722efaf05e0e32d122314fba04bed5c71eac7e4247f0df896e4397fdf1a8c",
+    "fixture_sha256": "2404cc6ce880aa56dc64bbd15559c24d211fae041f5a2d1aa0431af00e6829f3"
+  },
+  {
+    "fixture": "clean-GBPUSD-PERIOD_H4.csv",
+    "rows": 996,
+    "closed_comparisons": 15920,
+    "max_absolute_error": 4.53859172466764e-13,
+    "mismatches": [],
+    "open_state_held": true,
+    "source_sha256": "59c722efaf05e0e32d122314fba04bed5c71eac7e4247f0df896e4397fdf1a8c",
+    "fixture_sha256": "8054e337153b5663673465fb40cdcbb7bb1603a80a1ea3c66a4faac8cf877422"
+  }
+]

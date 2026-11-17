@@ -1,0 +1,209 @@
+//@version=6
+// Harmony Algo Community | harmonyalgo.com
+// Derived from approved source0ee0bba8dec5; calculations unchanged.
+// Original conditional three-scenario Bayesian comparison, not a win probability.
+indicator("Bayesian Turn Evidence Community [Harmony Algo]", "Bayes Turn", overlay=true, max_labels_count=500, max_bars_back=200, calc_bars_count=6000, behind_chart=false)
+int length = input.int(48,"Trend context",minval=24,maxval=96)
+float strength = input.float(2.5,"Context displacement (ATR)",minval=1.5,maxval=5,step=0.5)
+float oddsGate = input.float(3.0,"Turn / continuation evidence",minval=2,maxval=6,step=0.5)
+float chase = input.float(1.75,"Maximum entry distance (ATR)",minval=1,maxval=3,step=0.25)
+bool marks = input.bool(true,"Show preparation marks")
+bool panel = input.bool(true,"Show evidence panel")
+color up = #018208
+color dn = #D12208
+float atr = ta.atr(21)
+float delta = ta.change(close)
+float noise = ta.stdev(delta,32)[1]
+float effect = ta.sma(math.abs(delta),32)[1]
+float fit = (ta.linreg(close[1],length,0)-ta.linreg(close[1],length,length-1))/atr[1]
+float localHigh = ta.highest(high,12)
+float localLow = ta.lowest(low,12)
+float priorHigh = ta.highest(high[12],12)
+float priorLow = ta.lowest(low[12],12)
+int highAge = math.abs(ta.highestbars(high,12))
+int lowAge = math.abs(ta.lowestbars(low,12))
+if barstate.isfirst and not chart.is_standard
+    runtime.error("Use standard time-based candles.")
+// Harmony Algo | harmonyalgo.com — original conditional evidence calculation.
+// Common Student-t(df=5) normalizer cancels in model odds.
+f_score(float x,float m,float s) =>
+    -3.0*math.log(1.0+math.pow((x-m)/s,2)/5.0)
+var int context = 0
+var int rising = 0
+var int falling = 0
+var int flat = 0
+var int phase = 0
+var int side = 0
+var int started = na
+var int confirmed = na
+var int ended = -10000
+var int rejectCount = 0
+var float anchor = na
+var float unit = na
+var float guard = na
+var float reclaim = na
+var float mu = na
+var float scale = na
+var float lc = math.log(0.5)
+var float lb = math.log(0.3)
+var float lr = math.log(0.2)
+var float pc = 0.5
+var float pb = 0.3
+var float pr = 0.2
+var float evidence = 1.0
+var float contextValue = na
+bool prepBuy = false
+bool prepSell = false
+bool buy = false
+bool sell = false
+bool failed = false
+bool cancelled = false
+bool invalidated = false
+bool retired = false
+bool valid = bar_index>=96 and not na(fit) and not na(noise) and not na(effect) and atr[1]>0 and close>0 and close[1]>0
+if barstate.isconfirmed
+    contextValue := fit
+    if valid
+        rising := fit>=strength ? rising+1 : 0
+        falling := fit<=-strength ? falling+1 : 0
+        flat := math.abs(fit)<1.0 ? flat+1 : 0
+        if rising>=2
+            context := 1
+        else if falling>=2
+            context := -1
+        else if flat>=3
+            context := 0
+        if phase==2
+            if side*(close-guard)<0
+                invalidated := true
+                phase := 0
+                ended := bar_index
+            else if bar_index-confirmed>=32
+                retired := true
+                phase := 0
+        if phase==1
+            int age = bar_index-started
+            float x = side*delta/unit
+            lc += f_score(x,-mu,scale)
+            lb += f_score(x,mu*math.exp(-age/3.0),scale)
+            lr += f_score(x,mu,scale)
+            float biggest = math.max(lc,math.max(lb,lr))
+            float wc = math.exp(lc-biggest)
+            float wb = math.exp(lb-biggest)
+            float wr = math.exp(lr-biggest)
+            float total = wc+wb+wr
+            pc := wc/total
+            pb := wb/total
+            pr := wr/total
+            float oppositeLog = math.max(lb,lr)+math.log(1.0+math.exp(-math.abs(lb-lr)))
+            evidence := math.exp(math.min(30.0,oppositeLog-lc))
+            // Renormalize logs to avoid accumulation of a large common offset.
+            lc -= biggest+math.log(total)
+            lb -= biggest+math.log(total)
+            lr -= biggest+math.log(total)
+            rejectCount := age>=2 and pc>0.80 ? rejectCount+1 : 0
+            float distance = side*(close-anchor)/unit
+            if side*(close-guard)<0
+                failed := true
+                phase := 0
+                ended := bar_index
+            else if age>=16 or rejectCount>=2 or distance>chase
+                cancelled := true
+                phase := 0
+                ended := bar_index
+            else if age>=1 and evidence>=oddsGate and side*(close-reclaim)>0 and distance>=0.5
+                buy := side==1
+                sell := side==-1
+                phase := 2
+                confirmed := bar_index
+                ended := bar_index
+        else if bar_index-ended>=12 and context!=0
+            int wanted = -context
+            float candidate = wanted==1 ? localLow : localHigh
+            int freshness = wanted==1 ? lowAge : highAge
+            bool extended = wanted==1 ? localLow<priorLow : localHigh>priorHigh
+            float retreat = wanted*(close-candidate)/atr[1]
+            if freshness<=3 and extended and retreat>=0.35 and retreat<=1.0
+                side := wanted
+                anchor := candidate
+                unit := atr[1]
+                guard := anchor-side*0.15*unit
+                reclaim := side==1 ? math.max(open,close) : math.min(open,close)
+                mu := math.max(0.15,math.min(0.40,0.65*effect/unit))
+                scale := math.max(0.25,math.min(1.25,noise/unit))
+                lc := math.log(0.5)
+                lb := math.log(0.3)
+                lr := math.log(0.2)
+                pc := 0.5
+                pb := 0.3
+                pr := 0.2
+                evidence := 1.0
+                phase := 1
+                started := bar_index
+                rejectCount := 0
+                prepBuy := side==1
+                prepSell := side==-1
+    else
+        context := 0
+        phase := 0
+        rising := 0
+        falling := 0
+        flat := 0
+color direction = side==1 ? up : dn
+plotshape(marks and prepBuy,"Buy preparation",shape.circle,location.belowbar,color.new(up,40),size=size.tiny)
+plotshape(marks and prepSell,"Sell preparation",shape.circle,location.abovebar,color.new(dn,40),size=size.tiny)
+if buy
+    label.new(bar_index,low-atr[1]*0.3,"Buy ▲",style=label.style_label_up,color=up,textcolor=color.white,size=size.small)
+if sell
+    label.new(bar_index,high+atr[1]*0.3,"Sell ▼",style=label.style_label_down,color=dn,textcolor=color.white,size=size.small)
+bool gap = prepBuy or prepSell
+pa = plot(phase==1 and not gap ? anchor : na,"Local attempt extreme",color.new(direction,65),style=plot.style_linebr,display=display.all-display.price_scale-display.status_line)
+pt = plot(phase==1 and not gap ? reclaim : na,"Frozen reclaim",color.new(direction,35),style=plot.style_linebr,display=display.all-display.price_scale-display.status_line)
+fill(pa,pt,color.new(direction,93))
+plot(phase>0 and not gap ? guard : na,"Frozen invalidation",color.new(direction,25),style=plot.style_linebr,display=display.all-display.price_scale-display.status_line)
+plot(contextValue,"Context displacement",display=display.data_window)
+plot(context,"Independent context",display=display.data_window)
+plot(pc,"Continuation model",display=display.data_window)
+plot(pb,"Temporary response model",display=display.data_window)
+plot(pr,"Reversal model",display=display.data_window)
+plot(evidence,"Turn continuation odds",display=display.data_window)
+plot(phase,"Lifecycle",display=display.data_window)
+plot(side,"Attempt direction",display=display.data_window)
+plot(anchor,"Frozen extreme diagnostic",display=display.data_window)
+plot(guard,"Frozen guard diagnostic",display=display.data_window)
+plot(reclaim,"Frozen reclaim diagnostic",display=display.data_window)
+plot(unit,"Frozen ATR diagnostic",display=display.data_window)
+plot(prepBuy ? 1 : 0,"Preparation buy event",display=display.data_window)
+plot(prepSell ? 1 : 0,"Preparation sell event",display=display.data_window)
+plot(buy ? 1 : 0,"Buy event",display=display.data_window)
+plot(sell ? 1 : 0,"Sell event",display=display.data_window)
+plot(failed ? 1 : 0,"Failed event",display=display.data_window)
+plot(cancelled ? 1 : 0,"Cancelled event",display=display.data_window)
+plot(invalidated ? 1 : 0,"Invalidated event",display=display.data_window)
+plot(retired ? 1 : 0,"Retired guard event",display=display.data_window)
+plot(atr[1],"Prior ATR diagnostic",display=display.data_window)
+plot(noise,"Prior noise diagnostic",display=display.data_window)
+plot(effect,"Prior effect diagnostic",display=display.data_window)
+var table info = table.new(position.top_right,2,4,bgcolor=color.new(#141922,8))
+if barstate.islast and panel
+    table.cell(info,0,0,"Harmony Algo",text_color=color.white,text_size=size.small)
+    table.cell(info,1,0,"harmonyalgo.com",text_color=color.silver,text_size=size.small)
+    table.cell(info,0,1,"BAYESIAN TURN",text_color=color.white,text_size=size.small)
+    table.cell(info,1,1,phase==1 ? "Preparing" : phase==2 ? "Confirmed" : "Waiting",text_color=phase>0 ? direction : #7F49DE,text_size=size.small)
+    table.cell(info,0,2,phase==2 ? "Evidence at signal" : "Turn / continuation",text_color=color.silver,text_size=size.small)
+    table.cell(info,1,2,phase>0 ? str.tostring(evidence,"#.0")+"×" : "—",text_color=color.white,text_size=size.small)
+    table.cell(info,0,3,"Model evidence only",text_color=color.silver,text_size=size.small)
+    table.cell(info,1,3,"Close confirmed",text_color=color.silver,text_size=size.small)
+alertcondition(prepBuy,"Buy preparation","Bayesian Turn Revised: buy preparation on {{ticker}} {{interval}}.")
+alertcondition(prepSell,"Sell preparation","Bayesian Turn Revised: sell preparation on {{ticker}} {{interval}}.")
+alertcondition(buy,"Buy confirmed","Bayesian Turn Revised: Buy confirmed on {{ticker}} {{interval}}.")
+alertcondition(sell,"Sell confirmed","Bayesian Turn Revised: Sell confirmed on {{ticker}} {{interval}}.")
+alertcondition(failed,"Preparation failed","Bayesian Turn Revised: preparation failed on {{ticker}} {{interval}}.")
+alertcondition(cancelled,"Preparation cancelled","Bayesian Turn Revised: preparation cancelled on {{ticker}} {{interval}}.")
+alertcondition(invalidated,"Confirmation invalidated","Bayesian Turn Revised: guard invalidated on {{ticker}} {{interval}}.")
+
+// Harmony Algo | harmonyalgo.com — permanent Community branding, independent of the model.
+var table brand = table.new(position.middle_center,1,2)
+if barstate.islast
+    table.cell(brand,0,0,"Harmony Algo | harmonyalgo.com",text_color=color.new(#8592A6,40),text_size=size.normal,bgcolor=color.new(color.black,100))
+    table.cell(brand,0,1,"Explore premium indicators at harmonyalgo.com",text_color=color.new(#8592A6,40),text_size=size.small,bgcolor=color.new(color.black,100))
