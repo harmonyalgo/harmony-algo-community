@@ -2,8 +2,6 @@
   "status": "passed",
   "source_sha256": "c01c12cc04aff553ecc0f6985b51f6b2dbd01ac23877ff7f92cc630afa92f1a6",
   "approved_clean_source": "0ee0bba8dec5ee4262b7b156d06d98294066a15a24ae0c79cea72fbf2752f2e5",
-  "saved_id": "USER;db642348ca074fa58db3794796d77532",
-  "saved_revision": "1.0",
   "observed_at": "2026-11-17T09:27:40.395Z",
   "native_closed_rows": 5999,
   "columns_per_row": 40,
@@ -12,6 +10,5 @@
   "compile_markers": [],
   "visual_scope": "BTC4h standard candles; watermark centered; panel header readable, no overlap",
   "screenshot_sha256": "09fd1bb00812628eb71dc9d23cc2b53c0a6559f12abdc359e70f1cc672579e47",
-  "desktop": "/Users/redbull/Desktop/BayesianTurnEvidence-Community.txt",
   "readback_normalization": "CRLF to LF only; exact normalized source SHA256 verified; separate Community saved script, no publication"
 }
