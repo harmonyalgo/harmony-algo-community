@@ -1,0 +1,9 @@
+Path Budget Map Community
+TradingView public script Jr5nEeZC, 20 Nov 2026 07:33:54 UTC.
+Approved Pine SHA-256: 66f0969df6ab71d6dd0c3e6d12d620ad2d43a62152d2673ae9d5ee53e548994e
+
+TradingView Community
+Pine and TXT are byte-identical. The Pine Editor source reconstructed before native compilation matched the release hash. The separate private editing copy ran on the AAPL 15-minute chart. The source comparison verified unchanged calculations, defaults, close gating, candle colors, marker and alert. The price-chart watermark and separate oscillator were inspected on desktop.
+
+MetaTrader 5 Community
+MetaEditor compiled the delivered source with zero errors and warnings. MT5 checked the source and EX5 on EURUSD M15 and GBPUSD H1 using cached native history. An independent model matched 7,809 closed bars, including 51 first events and 572 highlighted bars, after a full lookback. On EURUSD M15, 7,500 exported rows matched the separate clean build exactly. Native chart objects and center branding were inspected. A controlled MT5 data update confirmed that amending an open bar left outputs unchanged and that a subsequent bar confirmed the prior one. Terminal pop-up delivery and broker-to-broker parity were outside the test.

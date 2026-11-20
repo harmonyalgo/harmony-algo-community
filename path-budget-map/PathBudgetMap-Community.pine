@@ -1,0 +1,89 @@
+//@version=6
+// Path Budget Map Community — Harmony Algo | harmonyalgo.com
+// © 2026 Harmony Algo. Licensed under the Mozilla Public License 2.0.
+indicator("Path Budget Map Community [Harmony Algo]", "PathBud C", overlay=false, format=format.percent, precision=2)
+
+const int MaxBars = 96
+int days = input.int(30, "Reference trading days", minval=15, maxval=60)
+int minSamples = input.int(12, "Minimum matching days", minval=5, maxval=15)
+bool supported = chart.is_standard and timeframe.isminutes and timeframe.multiplier >= 15 and timeframe.multiplier <= 60
+if not supported
+    runtime.error("Use a standard 15- to 60-minute chart.")
+
+var matrix<float> history = matrix.new<float>(days, MaxBars, na)
+var array<int> lengths = array.new<int>(days, 0)
+var array<float> current = array.new<float>(MaxBars, na)
+var int nextRow = 0
+var int slot = 0
+var int streak = 0
+var float path = 0.0
+var bool fullDay = false
+var bool validDay = true
+var bool fired = false
+
+bool newDay = timeframe.change("D")
+float lower = na
+float median = na
+float upper = na
+float actual = na
+int sampleCount = 0
+bool accelerated = false
+
+if barstate.isconfirmed
+    if newDay
+        if fullDay and validDay and slot > 0 and slot <= MaxBars
+            for i = 0 to slot - 1
+                history.set(nextRow, i, current.get(i))
+            lengths.set(nextRow, slot)
+            nextRow := (nextRow + 1) % days
+        fullDay := not barstate.isfirst
+        validDay := true
+        fired := false
+        slot := 0
+        streak := 0
+        path := 0.0
+
+    float prior = slot == 0 ? open : close[1]
+    validDay := validDay and not na(prior) and prior > 0 and not na(close) and close > 0
+    if fullDay and validDay and slot < MaxBars
+        path += 100.0 * math.abs(math.log(close / prior))
+        current.set(slot, path)
+        actual := path
+        array<float> sample = array.new<float>()
+        for row = 0 to days - 1
+            if lengths.get(row) > slot
+                sample.push(history.get(row, slot))
+        sampleCount := sample.size()
+        if sampleCount >= minSamples
+            sample.sort()
+            lower := sample.percentile_linear_interpolation(25)
+            median := sample.percentile_linear_interpolation(50)
+            upper := sample.percentile_linear_interpolation(75)
+        bool fast = slot >= 3 and not na(median) and median > 0 and path > upper and path >= 1.5 * median
+        streak := fast ? streak + 1 : 0
+        accelerated := streak == 3 and not fired
+        fired := fired or accelerated
+    slot += 1
+
+// Harmony Algo | harmonyalgo.com — close-confirmed display.
+// Omit the first plotted point so the previous day's path never joins this day's.
+bool draw = barstate.isconfirmed and not newDay
+// Match the event's amber and highlight subsequent confirmed bars in the same streak.
+barcolor(barstate.isconfirmed and not na(actual) and streak >= 3 ? #E9A737 : na, title="Confirmed fast path")
+pLow = plot(draw ? lower : na, "Prior 25th percentile", color.new(#9465D6, 58), style=plot.style_linebr)
+pHigh = plot(draw ? upper : na, "Prior 75th percentile", color.new(#9465D6, 58), style=plot.style_linebr)
+fill(pLow, pHigh, color.new(#9465D6, 86), title="Middle half of prior days", fillgaps=false)
+plot(draw ? median : na, "Prior median", color.new(#9465D6, 8), style=plot.style_linebr)
+plot(draw ? actual : na, "Path traveled", #20B9C5, 2, plot.style_linebr)
+plotshape(accelerated ? actual : na, title="Fast path", style=shape.diamond, location=location.absolute, color=#E9A737, size=size.tiny)
+plot(actual, "Path traveled (including first bar)", display=display.data_window)
+plot(sampleCount, "Matching prior days", display=display.data_window, format=format.price, precision=0)
+plot(accelerated ? 1 : 0, "Fast path event", display=display.data_window, format=format.price, precision=0)
+// Harmony Algo | harmonyalgo.com — daily first-event alert.
+alertcondition(accelerated, "Fast path", "Path Budget Map: cumulative path is unusually large for this point in the trading day on {{ticker}} ({{interval}}).")
+
+// Persistent Community brand on the price chart.
+var table communityBrand = table.new(position.middle_center, 1, 2, force_overlay=true)
+if barstate.islast
+    table.cell(communityBrand, 0, 0, "Harmony Algo | harmonyalgo.com", text_color=color.new(chart.fg_color, 35), text_size=size.normal)
+    table.cell(communityBrand, 0, 1, "Explore premium indicators at harmonyalgo.com", text_color=color.new(chart.fg_color, 40), text_size=size.small)
